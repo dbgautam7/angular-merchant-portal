@@ -1,0 +1,70 @@
+export type Role = 'SALES' | 'REVIEWER' | 'ADMIN';
+export type ApplicationStatus = 'DRAFT' | 'SUBMITTED' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface User {
+  id: string;
+  name: string;
+  role: Role;
+}
+
+export interface AuthResponse {
+  user: User;
+  accessToken: string;
+  refreshToken: string;
+}
+
+export interface BusinessInfo {
+  legalName: string;
+  registrationNumber: string;
+  category: string;
+  website: string;
+}
+
+export interface OwnerInfo {
+  fullName: string;
+  email: string;
+  dateOfBirth: string;
+  taxId: string; // sensitive
+}
+
+export interface BankingInfo {
+  bankName: string;
+  accountNumber: string; // sensitive
+  monthlyVolume: number | null;
+}
+
+export interface ApplicationForm {
+  business: BusinessInfo;
+  owner: OwnerInfo;
+  banking: BankingInfo;
+}
+
+export interface RiskEvent {
+  at: string;
+  by: string;
+  decision: 'APPROVED' | 'REJECTED' | 'NOTE';
+  comment: string;
+}
+
+export interface MerchantApplication extends ApplicationForm {
+  id: string;
+  status: ApplicationStatus;
+  createdBy: string;
+  assignedTo: string | null;
+  updatedAt: string;
+  riskHistory: RiskEvent[];
+}
+
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface ApplicationQuery {
+  page: number;
+  size: number;
+  status: ApplicationStatus | '';
+  q: string;
+}
