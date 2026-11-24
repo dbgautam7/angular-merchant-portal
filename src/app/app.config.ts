@@ -1,4 +1,4 @@
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import {
   ApplicationConfig,
   provideBrowserGlobalErrorListeners,
@@ -6,6 +6,7 @@ import {
 } from '@angular/core';
 import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { routes } from './app.routes';
+import { mockApiInterceptor } from './core/mock/mock-api.interceptor';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -13,7 +14,7 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     // withComponentInputBinding: route params such as :id are bound straight to input() signals.
     provideRouter(routes, withComponentInputBinding()),
-    // Functional interceptors are registered here via withInterceptors([...]).
-    provideHttpClient(),
+    // The in-memory mock backend must stay LAST in the chain: it acts as the server.
+    provideHttpClient(withInterceptors([mockApiInterceptor])),
   ],
 };
