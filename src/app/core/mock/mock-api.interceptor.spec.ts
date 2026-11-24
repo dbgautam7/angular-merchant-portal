@@ -8,14 +8,30 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { Observable } from 'rxjs';
 import { ApplicationApi } from '../api/application.api';
-import { ApplicationQuery, AuthResponse } from '../models';
+import { ApplicationForm, ApplicationQuery, AuthResponse, MerchantApplication } from '../models';
 import { expireAllAccessTokens, mockApiInterceptor, resetMockDb } from './mock-api.interceptor';
-import { emptyForm } from './mock-db';
 
 /**
  * The mock backend is the security boundary, so its rules are tested through the typed client.
  * A minimal bearer interceptor stands in for the real auth interceptor.
  */
+/** A complete, valid (fictional) application. */
+const COMPLETE: ApplicationForm = {
+  business: {
+    legalName: 'Acme Demo Ltd',
+    registrationNumber: 'REG-123456',
+    category: 'RETAIL',
+    website: 'https://acme.example.com',
+  },
+  owner: {
+    fullName: 'Alex Example',
+    email: 'alex@example.com',
+    dateOfBirth: '1985-06-15',
+    taxId: 'TAX123456789',
+  },
+  banking: { bankName: 'Example Bank', accountNumber: '123456789012', monthlyVolume: 25000 },
+};
+
 describe('mockApiInterceptor (server rules)', () => {
   const query: ApplicationQuery = { page: 1, size: 10, status: '', q: '' };
   let token = '';
@@ -147,10 +163,67 @@ describe('mockApiInterceptor (server rules)', () => {
     const draft = call(api.createDraft()).value!;
     expect(draft).toMatchObject({ status: 'DRAFT', createdBy: 'u-sales-1' });
 
-    const form = { ...emptyForm(), business: { ...emptyForm().business, legalName: 'Acme Demo' } };
-    expect(call(api.saveDraft(draft.id, form)).value?.business.legalName).toBe('Acme Demo');
+    expect(call(api.saveDraft(draft.id, COMPLETE)).value?.business.legalName).toBe('Acme Demo Ltd');
     expect(call(api.submit(draft.id)).value?.status).toBe('SUBMITTED');
-    expect(call(api.saveDraft(draft.id, form)).status).toBe(403);
+    expect(call(api.saveDraft(draft.id, COMPLETE)).status).toBe(403);
+  });
+
+  it('saves only the form fields: status, owner, assignment and history cannot be written', () => {
+    loginAs('u-sales-2'); // app-005 is u-sales-2's draft
+    const forged = {
+      ...COMPLETE,
+      id: 'app-999',
+      status: 'APPROVED',
+      createdBy: 'u-sales-1',
+      assignedTo: 'u-rev-1',
+      riskHistory: [{ at: 'now', by: 'Rita Reviewer', decision: 'APPROVED', comment: 'forged' }],
+    };
+    const saved = call(http.put<MerchantApplication>('/api/applications/app-005', forged)).value!;
+    expect(saved).toMatchObject({
+      id: 'app-005',
+      status: 'DRAFT',
+      createdBy: 'u-sales-2',
+      assignedTo: null,
+      riskHistory: [],
+    });
+    expect(saved.business.legalName).toBe('Acme Demo Ltd'); // the form fields were saved
+
+    // Still the author's draft, still hidden from everyone else's scope.
+    loginAs('u-sales-1');
+    expect(call(api.get('app-005')).status).toBe(404);
+  });
+
+  it('rejects a malformed draft without applying any of it', () => {
+    loginAs('u-sales-2');
+    const put = (body: unknown) => call(http.put('/api/applications/app-005', body));
+    expect(put('not an object').status).toBe(400);
+    expect(put({ business: 'Acme' }).status).toBe(400);
+    expect(
+      put({ business: { legalName: 'Changed' }, banking: { monthlyVolume: '5000' } }).status,
+    ).toBe(400);
+    expect(call(api.get('app-005')).value?.business.legalName).toBe('Demo Merchant 5 Pvt Ltd');
+
+    // A partial save keeps the other fields.
+    expect(put({ owner: { fullName: 'New Owner' } }).value).toMatchObject({
+      owner: { fullName: 'New Owner', email: 'owner5@example.com' },
+    });
+  });
+
+  it('refuses to submit an incomplete or invalid application, saying why', () => {
+    loginAs('u-sales-1');
+    const draft = call(api.createDraft()).value!;
+    const invalid = { ...COMPLETE, owner: { ...COMPLETE.owner, taxId: 'TAX12' } };
+    call(api.saveDraft(draft.id, invalid));
+
+    let error: HttpErrorResponse | undefined;
+    api.submit(draft.id).subscribe({ error: (e: HttpErrorResponse) => (error = e) });
+    vi.advanceTimersByTime(300);
+    expect(error?.status).toBe(422);
+    expect(error?.error.problems).toEqual(['Tax ID must be TAX followed by 9 digits.']);
+    expect(call(api.get(draft.id)).value?.status).toBe('DRAFT');
+
+    call(api.saveDraft(draft.id, COMPLETE));
+    expect(call(api.submit(draft.id)).value?.status).toBe('SUBMITTED');
   });
 
   it('allows decisions only to REVIEWER/ADMIN and assignment only to ADMIN', () => {

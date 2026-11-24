@@ -1,4 +1,5 @@
 import { Location } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Routes, withComponentInputBinding } from '@angular/router';
@@ -253,6 +254,28 @@ describe('ApplicationWizardComponent', () => {
 
     expect(el().querySelector('[role="alert"]')?.textContent).toContain('Could not submit');
     expect(button('Submit application').disabled).toBe(false);
+    expect(path()).toBe('/applications/app-005/edit');
+  });
+
+  it('explains a submission the server rejects as incomplete', async () => {
+    api.submit.mockReturnValueOnce(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 422,
+            error: { problems: ['Tax ID must be TAX followed by 9 digits.'] },
+          }),
+      ),
+    );
+    await open('/applications/app-005/edit');
+    step('Review').click();
+    await settle();
+    button('Submit application').click();
+    await settle();
+
+    expect(el().querySelector('[role="alert"]')?.textContent).toContain(
+      'Tax ID must be TAX followed by 9 digits.',
+    );
     expect(path()).toBe('/applications/app-005/edit');
   });
 

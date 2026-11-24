@@ -6,6 +6,7 @@ import {
 } from '@angular/common/http';
 import { delay, dematerialize, materialize, Observable, of, throwError } from 'rxjs';
 import { ApplicationForm, ApplicationStatus, MerchantApplication, Role, User } from '../models';
+import { submissionProblems } from '../application-rules';
 import { emptyForm, seed, USERS } from './mock-db';
 
 /**
@@ -31,8 +32,8 @@ export function expireAllAccessTokens(): void {
 
 const rnd = () => Math.random().toString(36).slice(2);
 const ok = <T>(body: T) => of(new HttpResponse({ status: 200, body })).pipe(delay(250));
-const fail = (status: number, message: string, url: string) =>
-  throwError(() => new HttpErrorResponse({ status, error: { message }, url })).pipe(
+const fail = (status: number, message: string, url: string, details: object = {}) =>
+  throwError(() => new HttpErrorResponse({ status, error: { message, ...details }, url })).pipe(
     materialize(),
     delay(250),
     dematerialize(),
@@ -70,6 +71,41 @@ const toDto = (a: MerchantApplication, u: User): MerchantApplication => {
     banking: { ...a.banking, accountNumber: mask(a.banking.accountNumber) },
   };
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * The draft after a save: the stored form with the incoming form fields laid over it. Only
+ * known fields are read, so a client cannot write status, owner, assignment or risk history
+ * through a draft save (no mass assignment). Missing fields keep their value; a field of the
+ * wrong type makes the whole save invalid (null), so nothing is half-applied.
+ */
+function draftAfterSave(app: MerchantApplication, body: unknown): ApplicationForm | null {
+  if (!isRecord(body)) return null;
+  const next: ApplicationForm = structuredClone({
+    business: app.business,
+    owner: app.owner,
+    banking: app.banking,
+  });
+  for (const section of ['business', 'owner', 'banking'] as const) {
+    const incoming = body[section];
+    if (incoming === undefined) continue;
+    if (!isRecord(incoming)) return null;
+    const target = next[section];
+    for (const key of Object.keys(target)) {
+      const value = incoming[key];
+      if (value === undefined) continue;
+      const valid =
+        key === 'monthlyVolume'
+          ? value === null || (typeof value === 'number' && Number.isFinite(value))
+          : typeof value === 'string';
+      if (!valid) return null;
+      Object.assign(target, { [key]: value });
+    }
+  }
+  return next;
+}
 
 export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
   if (!req.url.startsWith('/api/')) return next(req);
@@ -157,12 +193,17 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
 
   if (!action && method === 'PUT') {
     if (!need('SALES') || app.status !== 'DRAFT') return forbid();
-    Object.assign(app, body as unknown as ApplicationForm);
+    const draft = draftAfterSave(app, body);
+    if (!draft) return fail(400, 'Invalid draft', url);
+    Object.assign(app, draft);
     touch();
     return ok(app);
   }
   if (action === 'submit' && method === 'POST') {
     if (!need('SALES') || app.status !== 'DRAFT') return forbid();
+    // The form already checks all this; the server checks again, as a client can skip the form.
+    const problems = submissionProblems(app);
+    if (problems.length) return fail(422, 'The application is incomplete', url, { problems });
     app.status = 'SUBMITTED';
     touch();
     return ok(toDto(app, user));

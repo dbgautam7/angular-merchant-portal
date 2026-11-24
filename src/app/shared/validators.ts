@@ -1,10 +1,11 @@
 import { ValidationErrors, ValidatorFn } from '@angular/forms';
+import { ageOn, isHttpsUrl, PATTERNS } from '../core/application-rules';
 
 /**
- * Custom validators for the application form. Each one ignores empty values, so a field is
- * optional unless it also has Validators.required. That keeps "required" and "format" errors
- * separate, and lets the form field show a required marker from Validators.required alone.
- * The formats are fictional and exist only for this demo.
+ * Angular validators over the shared application rules (core/application-rules.ts), which the
+ * server checks again on submit. Each one ignores empty values, so a field is optional unless
+ * it also has Validators.required. That keeps "required" and "format" errors separate, and lets
+ * the form field show a required marker from Validators.required alone.
  */
 const isEmpty = (value: unknown): boolean => value === null || value === undefined || value === '';
 
@@ -14,13 +15,13 @@ const matches =
     isEmpty(control.value) || pattern.test(String(control.value)) ? null : { [key]: true };
 
 /** "REG-" followed by 6 digits. */
-export const registrationNumber = matches(/^REG-\d{6}$/, 'registrationNumber');
+export const registrationNumber = matches(PATTERNS.registrationNumber, 'registrationNumber');
 
 /** "TAX" followed by 9 digits. */
-export const taxId = matches(/^TAX\d{9}$/, 'taxId');
+export const taxId = matches(PATTERNS.taxId, 'taxId');
 
 /** 10 to 18 digits. */
-export const accountNumber = matches(/^\d{10,18}$/, 'accountNumber');
+export const accountNumber = matches(PATTERNS.accountNumber, 'accountNumber');
 
 /** Rejects text that is only whitespace, which Validators.required lets through. */
 export const notBlank: ValidatorFn = (control) =>
@@ -28,38 +29,17 @@ export const notBlank: ValidatorFn = (control) =>
     ? { required: true }
     : null;
 
-/** An absolute https:// address with a dotted host name. Parsed with URL rather than a regex. */
-export const httpsUrl: ValidatorFn = (control) => {
-  if (isEmpty(control.value)) return null;
-  try {
-    const url = new URL(String(control.value));
-    return url.protocol === 'https:' && url.hostname.includes('.') ? null : { httpsUrl: true };
-  } catch {
-    return { httpsUrl: true };
-  }
-};
+/** An absolute https:// address with a dotted host name. */
+export const httpsUrl: ValidatorFn = (control) =>
+  isEmpty(control.value) || isHttpsUrl(String(control.value)) ? null : { httpsUrl: true };
 
-/**
- * The person must be at least `years` old on `today()`. Reads the yyyy-mm-dd value of
- * <input type="date"> as a local calendar date: `new Date('2008-11-24')` would parse as UTC
- * midnight and land on the previous day west of Greenwich, so the birthday check would be off by one.
- */
+/** The person must be at least `years` old on `today()`; impossible dates are rejected. */
 export const minAge =
   (years: number, today: () => Date = () => new Date()): ValidatorFn =>
   (control): ValidationErrors | null => {
     if (isEmpty(control.value)) return null;
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(control.value));
-    if (!match) return { date: true };
-    const [year, month, day] = match.slice(1).map(Number);
-    const date = new Date(year, month - 1, day);
-    // Rejects impossible dates such as 2023-02-30, which Date silently rolls over to March 2.
-    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-      return { date: true };
-    }
-    const now = today();
-    const hadBirthday =
-      now.getMonth() > month - 1 || (now.getMonth() === month - 1 && now.getDate() >= day);
-    const age = now.getFullYear() - year - (hadBirthday ? 0 : 1);
+    const age = ageOn(String(control.value), today());
+    if (age === null) return { date: true };
     return age >= years ? null : { minAge: { required: years, actual: age } };
   };
 

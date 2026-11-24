@@ -1,4 +1,5 @@
 import { DatePipe, DecimalPipe, DOCUMENT } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -13,6 +14,7 @@ import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angula
 import { Router, RouterLink } from '@angular/router';
 import { catchError, map, Observable, of, startWith, switchMap, tap, throwError } from 'rxjs';
 import { ApplicationApi } from '../../core/api/application.api';
+import { MIN_NAME_LENGTH, MIN_OWNER_AGE } from '../../core/application-rules';
 import { ApplicationForm, MerchantApplication } from '../../core/models';
 import { autoSave } from '../../shared/auto-save';
 import { CATEGORY_LABELS, CategoryLabelPipe } from '../../shared/categories';
@@ -81,15 +83,15 @@ function buildForm(fb: NonNullableFormBuilder) {
   const text = [Validators.required, notBlank];
   return fb.group({
     business: fb.group({
-      legalName: ['', [...text, Validators.minLength(3), Validators.maxLength(120)]],
+      legalName: ['', [...text, Validators.minLength(MIN_NAME_LENGTH), Validators.maxLength(120)]],
       registrationNumber: ['', [Validators.required, registrationNumber]],
       category: ['', Validators.required],
       website: ['', httpsUrl],
     }),
     owner: fb.group({
-      fullName: ['', [...text, Validators.minLength(3), Validators.maxLength(120)]],
+      fullName: ['', [...text, Validators.minLength(MIN_NAME_LENGTH), Validators.maxLength(120)]],
       email: ['', [Validators.required, Validators.email]],
-      dateOfBirth: ['', [Validators.required, minAge(18)]],
+      dateOfBirth: ['', [Validators.required, minAge(MIN_OWNER_AGE)]],
       taxId: ['', [Validators.required, taxId]],
     }),
     banking: fb.group({
@@ -98,6 +100,18 @@ function buildForm(fb: NonNullableFormBuilder) {
       monthlyVolume: fb.control<number | null>(null, [Validators.required, Validators.min(1)]),
     }),
   });
+}
+
+/**
+ * The server re-checks the application on submit (422 with the reasons). The form normally
+ * catches the same problems first, so this only shows up if the rules ever disagree.
+ */
+function submitErrorMessage(error: unknown): string {
+  const problems: unknown = error instanceof HttpErrorResponse ? error.error?.problems : null;
+  if (error instanceof HttpErrorResponse && error.status === 422 && Array.isArray(problems)) {
+    return `The server could not accept the application: ${problems.join(' ')}`;
+  }
+  return 'Could not submit the application. Your answers are kept; try again.';
 }
 
 @Component({
@@ -247,11 +261,9 @@ export class ApplicationWizardComponent implements CanLeave {
       )
       .subscribe({
         next: (app) => void this.router.navigate(['/applications', app.id]),
-        error: () => {
+        error: (error: unknown) => {
           this.submitting.set(false);
-          this.submitError.set(
-            'Could not submit the application. Your answers are kept; try again.',
-          );
+          this.submitError.set(submitErrorMessage(error));
         },
       });
   }

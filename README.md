@@ -49,6 +49,7 @@ src/app/
   app.routes.ts   lazy route table with guards
   core/
     models.ts     domain types
+    application-rules.ts  formats, age and submit rules, shared by the form and the server
     api/          ApplicationApi, the typed HTTP client (one method per endpoint)
     auth/         AuthService (session), authInterceptor, guards, DEMO_USERS token
     mock/         in-memory backend (interceptor) and fictional seed data
@@ -71,8 +72,8 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
 | `GET /api/applications/summary?q`          | all roles            | counts per status in the same scope, for the dashboard tabs                     |
 | `POST /api/applications`                   | SALES                | creates an empty draft                                                          |
 | `GET /api/applications/:id`                | anyone in scope      | sensitive fields come back masked                                               |
-| `PUT /api/applications/:id`                | SALES (own draft)    | saves a draft; 403 once submitted                                               |
-| `POST /api/applications/:id/submit`        | SALES (own draft)    | DRAFT → SUBMITTED                                                               |
+| `PUT /api/applications/:id`                | SALES (own draft)    | saves the form fields only (anything else is ignored); 403 once submitted       |
+| `POST /api/applications/:id/submit`        | SALES (own draft)    | DRAFT → SUBMITTED, only if complete and valid (422 with the reasons otherwise)  |
 | `POST /api/applications/:id/decision`      | REVIEWER, ADMIN      | `{ decision, comment }` on SUBMITTED / IN_REVIEW; validated; added to history   |
 | `PUT /api/applications/:id/assign`         | ADMIN                | `{ reviewerId }`, only while under review; SUBMITTED → IN_REVIEW                |
 | `GET /api/applications/:id/reveal/:field`  | REVIEWER, ADMIN      | unmasked `taxId` / `accountNumber`, audit-logged                                |
@@ -81,7 +82,10 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
 - **Scope.** SALES sees only applications they created, REVIEWER only those assigned to them, ADMIN everything. Anything out of scope returns **404, not 403**, so its existence isn't leaked.
 - **Tokens.** Access tokens live 30 s on purpose, so the refresh flow below is easy to trigger. Requests without a valid token get 401.
 - **Masking.** Tax ID and account number leave the "server" as `••••••••6789`. The only exception is the author's own draft, which they need to edit.
-- **Validation.** The server checks what it is sent, not just who sends it: a decision must be `APPROVED` or `REJECTED` with a non-blank comment (400 otherwise), so a client can't send `DRAFT` to reopen an application. A decided application can't be decided again, and only applications under review can be assigned; assigning a draft would show it to a reviewer before submission.
+- **Validation.** The server checks what it is sent, not just who sends it:
+  - **No mass assignment.** A draft save copies only the known form fields, with type checks. Status, owner, assignment and risk history can't be written through it, so a SALES user can't approve their own application or forge a reviewer's decision. A field of the wrong type rejects the whole save (400), so nothing is half-applied.
+  - **Submit is validated.** The server re-checks the application with the same rules as the form (`core/application-rules.ts`) and answers 422 with the reasons if it is incomplete; the wizard shows them.
+  - **Decisions and assignment.** A decision must be `APPROVED` or `REJECTED` with a non-blank comment (400 otherwise), so a client can't send `DRAFT` to reopen an application. A decided application can't be decided again, and only applications under review can be assigned; assigning a draft would show it to a reviewer before submission.
 - **Demo data.** 42 seeded applications and 5 users (`u-sales-1`, `u-sales-2`, `u-rev-1`, `u-rev-2`, `u-admin`). All names, numbers and `example.com` addresses are fictional.
 
 ## Authentication & token refresh
@@ -110,7 +114,7 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
 
 Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each step is a `FormGroup`, and the form's shape matches `ApplicationForm`, so `getRawValue()` is the API payload.
 
-- **Validation.** Built-in validators plus custom ones in `shared/validators.ts`: registration number, tax ID and account number formats, `https://` URLs (parsed with `URL`, not a regex), whitespace-only text, and `minAge(18)`. Custom validators ignore empty values and leave that to `Validators.required`, so each error says one thing. `minAge` reads the date as a local calendar date: `new Date('2008-11-24')` parses as UTC midnight, which is the previous day west of Greenwich, so the birthday check would be off by one. I checked it by running the suite with `TZ=America/Los_Angeles` and `TZ=Asia/Kathmandu`.
+- **Validation.** Built-in validators plus custom ones in `shared/validators.ts`, which wrap the shared rules in `core/application-rules.ts`, so the server's submit check uses exactly the same formats: registration number, tax ID and account number formats, `https://` URLs (parsed with `URL`, not a regex), whitespace-only text, and `minAge(18)`. Custom validators ignore empty values and leave that to `Validators.required`, so each error says one thing. `minAge` reads the date as a local calendar date: `new Date('2008-11-24')` parses as UTC midnight, which is the previous day west of Greenwich, so the birthday check would be off by one. I checked it by running the suite with `TZ=America/Los_Angeles` and `TZ=Asia/Kathmandu`.
 - **Errors appear when they help.** A message shows after the field is touched (blur) or when the user tries to move on. Next, Enter, and jumping ahead in the stepper all stop at the first invalid step, mark it touched and focus its first invalid field. Going back is always allowed. Enter on a data step means Next and never submits the application.
 - **Accessible fields.** `<app-form-field>` renders the label, hint and error. Its `appFieldControl` directive gives the input a matching `id`, `aria-invalid`, `aria-required` and `aria-describedby` (hint plus error), so a screen reader reads the error when the field gets focus. Errors are not live regions, so ten errors don't interrupt ten times. Each step change moves focus to the step heading.
 - **OnPush-safe errors.** A field's inputs never change while the user types, so `FormFieldComponent` subscribes to the control's `events` stream (value, status and touched changes, Angular 18+) and keeps the message in a signal. It updates even when the change comes from code, such as `markAllAsTouched()`.
@@ -173,6 +177,7 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 
 ## Architecture decisions
 
+- **One set of business rules.** `core/application-rules.ts` holds the formats, minimum age and the submit check as plain functions. The Angular validators wrap them for the form, and the server uses them on submit, so the browser and the server can't drift apart.
 - **Domain model first.** `core/models.ts` defines roles, statuses, the three-part application form (business, owner, banking), risk events and the paging/query contracts. Every later layer is typed against it.
 - **Mock backend as an interceptor**, not json-server. It needs no extra process, and every permission rule lives in one file. Swapping in a real API means removing `mockApiInterceptor` and the `DEMO_USERS` provider from `app.config.ts`; `ApplicationApi` and every feature stay the same.
 - **Lazy features.** Each route ships as its own chunk; `@angular/forms` is loaded only with the wizard and detail pages, never in the initial bundle. The wizard route is declared before `/:id`, so `/applications/new` never matches as an id.
@@ -183,16 +188,17 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 ## Tests (`npm test`)
 
 - `app.routes.spec`: every page is lazy-loaded; one wizard route matches `new` and `:id/edit`, sits before `:id` and carries both guards; every page has a title; root and unknown URLs redirect.
-- `mock-api.interceptor.spec`: the server rules, tested through `ApplicationApi`. Covers per-status counts within the user's scope and search, 401 for missing or expired tokens, refresh-token rotation, role-scoped lists, server-side paging and filtering, 404 for out-of-scope records, masking with audited reveal, the draft lifecycle, role checks on decisions and assignment, and server-side validation of decisions (no unknown values, no blank comments, no deciding twice) and assignment (only while under review).
+- `mock-api.interceptor.spec`: the server rules, tested through `ApplicationApi`. Covers draft saves that ignore forged status, owner, assignment and history; malformed drafts rejected without partial updates; submit refused (422, with reasons) until the application is complete; per-status counts within the user's scope and search, 401 for missing or expired tokens, refresh-token rotation, role-scoped lists, server-side paging and filtering, 404 for out-of-scope records, masking with audited reveal, the draft lifecycle, role checks on decisions and assignment, and server-side validation of decisions (no unknown values, no blank comments, no deciding twice) and assignment (only while under review).
 - `auth.interceptor.spec`: bearer header on API calls only; **3 concurrent 401s → exactly 1 refresh → 3 retries with the new token**; a late 401 reuses the new token; no second retry; one logout when the refresh fails; non-401 errors and signed-out requests pass through. One end-to-end test does the same against the real mock `POST /api/auth/refresh`.
 - `guards.spec`: anonymous users go to `/login` with `returnUrl`; role blocking and multi-role access.
 - `login.component.spec`: `safeReturnUrl` rejects external, protocol-relative and `javascript:` URLs; sign-in returns to the intercepted page; failures show an error and re-enable the buttons.
 - `app.spec`: the navbar is hidden while signed out, "New application" shows for SALES only, logout works, the phone menu opens and closes with `aria-expanded`, and the skip link moves focus without leaving the page.
 - `dashboard.component.spec` (real router via `RouterTestingHarness`): the URL drives the API query; invalid params fall back; role-aware actions for SALES and REVIEWER; debounced search resets the page and replaces history; status tabs are links that keep the search, reset the page and mark the current tab; tabs show counts and still work if counts fail; numbered pagination and the page-gap algorithm; paging and its disabled ends; error → Retry recovers with the same filters; rows stay visible and busy while the next page loads; Clear filters on an empty result.
+- `application-rules.spec`: a complete application passes; an incomplete one lists every problem; age in whole years from a local date, including the 18th birthday and impossible dates.
 - `validators.spec`: each format, empty values left to `required`, `https` only, whitespace-only text, the 18th-birthday boundary, impossible dates, and the error messages.
 - `form-field.spec` (OnPush host): label/`id` link, required marker and `aria-required`, no error before touch, error and hint in `aria-describedby`, updates from code under OnPush.
 - `auto-save.spec` (fake timers): one debounced save of the latest value; no request for unchanged values; saves never overlap and a queued save sends the newest value; failure, then retry via `flush()`; `flush()` waits for a running save; `reset()` after load.
-- `application-wizard.component.spec` (real router): Next and Enter stop at invalid steps and focus the first error; jumping ahead only through valid steps; the first auto-save creates the draft once, switches the URL and keeps the wizard mounted; "New application" then starts blank; loading a draft doesn't save it; submitted applications open read-only; masked review values; submit saves pending changes first; submit and save failures with Retry; saving before leaving, and asking when that fails.
+- `application-wizard.component.spec` (real router): Next and Enter stop at invalid steps and focus the first error; jumping ahead only through valid steps; the first auto-save creates the draft once, switches the URL and keeps the wizard mounted; "New application" then starts blank; loading a draft doesn't save it; submitted applications open read-only; masked review values; submit saves pending changes first; submit and save failures with Retry; the server's 422 reasons are shown; saving before leaving, and asking when that fails.
 - `sensitive-value.component.spec`: masked even when the API sends the full value; screen-reader text; no Reveal without permission; reveal then hide; auto-hide after 30 s; a refused reveal stays masked.
 - `application-detail.component.spec` (real router): SALES read-only with masked values and no review controls or reviewer call; Continue editing on a draft; REVIEWER gets decisions and Reveal but not assignment; a comment is required and focused; a decision updates status and history in place (no refetch) and focuses the confirmation; one action at a time; a 403 reloads the changed application; ADMIN assignment; no actions once decided; not found vs Retry.
 
