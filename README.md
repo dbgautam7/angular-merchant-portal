@@ -2,7 +2,7 @@
 
 Angular 20 app for merchant applications, with role-based access (SALES / REVIEWER / ADMIN).
 It runs fully offline: an in-memory mock API is built in, so you only need `npm start`.
-It is built in stages. **This stage adds authentication**: the demo login, route guards and a bearer-token interceptor with single-flight refresh. The feature pages behind the login are still placeholders.
+It is built in stages. **This stage adds the applications dashboard**: a URL-driven table with server-side paging, filtering and loading, error and retry states. The wizard and detail pages are still placeholders.
 
 ```bash
 npm install
@@ -17,7 +17,7 @@ npm run build
 | 1 | Architecture: workspace, tooling, domain model, app shell, lazy routes, test setup | ✅ done |
 | 2 | Mock backend (interceptor) and typed API client | ✅ done |
 | 3 | Auth: login, route guards, bearer-token interceptor with single-flight refresh | ✅ done |
-| 4 | Dashboard: server-side pagination, filtering, loading/error/retry | planned |
+| 4 | Dashboard: server-side pagination, filtering, loading/error/retry | ✅ done |
 | 5 | Multi-step wizard: reactive forms, custom validators, debounced auto-save | planned |
 | 6 | Detail & review: risk history, role-aware controls, sensitive-field masking, CSP | planned |
 
@@ -28,9 +28,10 @@ npm run build
 | Signals + `inject()` | Session state in signals (`user`, `isLoggedIn`, `role`); route params as `input()`; `inject()` everywhere |
 | Router, lazy features, guards | Each page loaded with `loadComponent`; functional `authGuard` and `roleGuard(...)` |
 | HTTP interceptor with single refresh | `core/auth/auth.interceptor.ts` + `AuthService.refresh()`: N concurrent 401s → **one** `POST /api/auth/refresh` |
+| RxJS for async flows | Dashboard: `toObservable(query)` → `switchMap` (cancels stale requests) → `scan` (view state) → `toSignal`; debounced search |
 | Change detection | New components use `OnPush`; signals tell Angular exactly what changed |
 | Mock API | `core/mock/mock-api.interceptor.ts`, the last interceptor in the chain, acting as the server |
-| Bootstrap 5 + SCSS | Bootstrap loaded globally in `angular.json`; overrides in `styles.scss` |
+| Bootstrap 5 + SCSS, responsive | Bootstrap grid, table and utilities; global overrides in `styles.scss`, component SCSS; secondary columns hidden below `md` |
 | Vitest + TestBed | Angular's `@angular/build:unit-test` builder with `runner: vitest` and jsdom |
 | Type safety | `strict` TypeScript plus `strictTemplates`, `strictInjectionParameters`, `typeCheckHostBindings` |
 
@@ -45,7 +46,7 @@ src/app/
     api/          ApplicationApi, the typed HTTP client (one method per endpoint)
     auth/         AuthService (session), authInterceptor, guards, DEMO_USERS token
     mock/         in-memory backend (interceptor) and fictional seed data
-  shared/         reusable UI and pure logic (validators, auto-save, masking); added with the features
+  shared/         reusable UI and pure logic: StatusBadge + STATUS_LABELS (validators, auto-save, masking come next)
   features/       one folder per lazy route: login, dashboard, application (wizard), detail
 ```
 Dependencies flow one way: `features → shared → core`. `core` never imports from features.
@@ -83,6 +84,15 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
   - performs the retry outside `catchError`, so a second 401 goes straight to the caller and cannot loop;
   - if the refresh fails, ends the session **once** (not once per waiting request), and every waiting request fails.
 
+## Dashboard
+- **The URL is the single source of truth.** `?page`, `?status` and `?q` are bound to signal `input()`s via `withComponentInputBinding()`. Filters survive a reload, Back and Forward work, and any view can be shared as a link. Query params are untrusted, so invalid values (`page=-3`, `status=toString`) fall back to defaults before reaching the API.
+- **Data flow.** `query` is a `computed` of the inputs. `toObservable(query)` plus a Retry subject feed `switchMap`, which cancels a stale request when the filters change. `scan` folds request, success and failure into one `ListState`, exposed with `toSignal`. The trimmed search term is its own `computed`, so typing a trailing space doesn't refetch.
+- **No flicker.** While the next page loads, the current rows stay on screen, dimmed and marked `aria-busy`. The full spinner shows only when there are no rows to show yet. I chose this over `rxResource` because a resource resets `value()` when its params change (blanking the table) and throws from `value()` in the error state; it is also still `@experimental` in Angular 20.
+- **Search** is debounced (300 ms), resets to page 1, and uses `replaceUrl` so typing doesn't flood the history. It is compared with the URL rather than with `distinctUntilChanged`, so it stays correct after Back or Forward. Type `error` to simulate a 500 and try Retry.
+- **States.** Loading, an error with Retry (filters are kept), an empty result with "Clear filters", and Previous/Next, which are disabled at the ends and clamp to the valid range (so Previous on `?page=99` goes to the last page).
+- **Permission-aware.** "New application" is shown to SALES only, and Edit only to SALES on drafts; View is shown to everyone. This is UX only, since the API scopes the rows and rejects other edits.
+- **Accessibility.** The search form is labelled with `role="search"`, every control has a label, the table has a caption and `scope` headers, row actions carry aria-labels ("Edit Demo Merchant 5 Pvt Ltd"), and a polite live region announces "42 applications found".
+
 ## Architecture decisions
 - **Domain model first.** `core/models.ts` defines roles, statuses, the three-part application form (business, owner, banking), risk events and the paging/query contracts. Every later layer is typed against it.
 - **Mock backend as an interceptor**, not json-server. It needs no extra process, and every permission rule lives in one file. Swapping in a real API means removing `mockApiInterceptor` and the `DEMO_USERS` provider from `app.config.ts`; `ApplicationApi` and every feature stay the same.
@@ -98,6 +108,7 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
 - `guards.spec`: anonymous users go to `/login` with `returnUrl`; role blocking and multi-role access.
 - `login.component.spec`: `safeReturnUrl` rejects external, protocol-relative and `javascript:` URLs; sign-in returns to the intercepted page; failures show an error and re-enable the buttons.
 - `app.spec`: the navbar is hidden while signed out, "New application" shows for SALES only, and logout works.
+- `dashboard.component.spec` (real router via `RouterTestingHarness`): the URL drives the API query; invalid params fall back; role-aware actions for SALES and REVIEWER; debounced search resets the page and replaces history; the status filter syncs both ways; paging and its disabled ends; error → Retry recovers with the same filters; rows stay visible and busy while the next page loads; Clear filters on an empty result.
 
 ## AI assistance disclosure
 AI assistance was used for scaffolding and drafting code. I review every file, and each stage is checked with the test suite and a production build before it is pushed.

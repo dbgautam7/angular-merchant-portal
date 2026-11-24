@@ -1,0 +1,161 @@
+@let s = state();
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0 d-flex align-items-center gap-2">
+    Applications
+    @if (s.loading && s.page) {
+      <span class="spinner-border spinner-border-sm text-secondary" aria-hidden="true"></span>
+    }
+  </h1>
+  @if (canCreate()) {
+    <a class="btn btn-primary" routerLink="/applications/new">New application</a>
+  }
+</div>
+
+<form
+  class="row g-2 mb-3"
+  role="search"
+  aria-label="Filter applications"
+  (submit)="$event.preventDefault()"
+>
+  <div class="col-sm-7 col-md-5">
+    <label for="search" class="visually-hidden">Search by merchant name or ID</label>
+    <input
+      #searchBox
+      id="search"
+      type="search"
+      class="form-control"
+      autocomplete="off"
+      placeholder="Search by name or ID (try “error”)"
+      [value]="q()"
+      (input)="onSearch(searchBox.value)"
+    />
+  </div>
+  <div class="col-sm-5 col-md-3">
+    <label for="status" class="visually-hidden">Status</label>
+    <select
+      #statusSelect
+      id="status"
+      class="form-select"
+      [value]="status()"
+      (change)="setStatus(statusSelect.value)"
+    >
+      <option value="">All statuses</option>
+      @for (option of statusOptions; track option.value) {
+        <option [value]="option.value">{{ option.label }}</option>
+      }
+    </select>
+  </div>
+</form>
+
+<p class="visually-hidden" role="status">{{ announcement() }}</p>
+
+@if (s.error) {
+  <div
+    class="alert alert-danger d-flex flex-wrap justify-content-between align-items-center gap-2"
+    role="alert"
+  >
+    {{ s.error }}
+    <button type="button" class="btn btn-outline-danger btn-sm" (click)="retry()">Retry</button>
+  </div>
+} @else if (s.page; as page) {
+  <div
+    class="table-responsive dashboard-table"
+    [class.is-busy]="s.loading"
+    [attr.aria-busy]="s.loading"
+  >
+    <table class="table table-hover align-middle mb-3">
+      <caption class="visually-hidden">
+        Merchant applications
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">ID</th>
+          <th scope="col">Merchant</th>
+          <th scope="col" class="d-none d-md-table-cell">Category</th>
+          <th scope="col">Status</th>
+          <th scope="col" class="d-none d-md-table-cell">Updated</th>
+          <th scope="col"><span class="visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (a of page.items; track a.id) {
+          @let name = a.business.legalName || '(untitled draft)';
+          <tr>
+            <td class="font-monospace">{{ a.id }}</td>
+            <td>{{ name }}</td>
+            <td class="d-none d-md-table-cell">{{ a.business.category || '—' }}</td>
+            <td><app-status-badge [status]="a.status" /></td>
+            <td class="d-none d-md-table-cell">{{ a.updatedAt | date: 'mediumDate' }}</td>
+            <td class="text-end text-nowrap">
+              @if (canEdit(a)) {
+                <a
+                  class="btn btn-sm btn-outline-primary me-1"
+                  [routerLink]="['/applications', a.id, 'edit']"
+                  [attr.aria-label]="'Edit ' + name"
+                  >Edit</a
+                >
+              }
+              <a
+                class="btn btn-sm btn-outline-secondary"
+                [routerLink]="['/applications', a.id]"
+                [attr.aria-label]="'View ' + name"
+                >View</a
+              >
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="6" class="text-center text-body-secondary py-4">
+              No applications found.
+              @if (hasFilters()) {
+                <button
+                  type="button"
+                  class="btn btn-link p-0 align-baseline"
+                  (click)="clearFilters()"
+                >
+                  Clear filters
+                </button>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  <nav
+    aria-label="Pagination"
+    class="d-flex flex-wrap justify-content-between align-items-center gap-2"
+  >
+    <small class="text-body-secondary">
+      {{ page.total }} results · page {{ page.page }} of {{ totalPages() }}
+    </small>
+    <ul class="pagination mb-0">
+      <li class="page-item" [class.disabled]="page.page <= 1">
+        <button
+          type="button"
+          class="page-link"
+          [disabled]="page.page <= 1"
+          (click)="goTo(page.page - 1)"
+        >
+          Previous
+        </button>
+      </li>
+      <li class="page-item" [class.disabled]="page.page >= totalPages()">
+        <button
+          type="button"
+          class="page-link"
+          [disabled]="page.page >= totalPages()"
+          (click)="goTo(page.page + 1)"
+        >
+          Next
+        </button>
+      </li>
+    </ul>
+  </nav>
+} @else {
+  <div class="text-center py-5">
+    <div class="spinner-border" aria-hidden="true"></div>
+  </div>
+}

@@ -1,0 +1,12 @@
+// Rows from the previous query stay visible (dimmed) while the next page loads: no layout jump.
+.dashboard-table {
+  transition: opacity 0.15s ease-in-out;
+
+  &.is-busy {
+    opacity: 0.6;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
