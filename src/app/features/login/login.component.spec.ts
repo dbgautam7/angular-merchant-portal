@@ -57,9 +57,18 @@ describe('LoginComponent', () => {
 
   beforeEach(() => login.mockReset());
 
-  it('lists every provided demo user with their role', () => {
-    const text = buttons(render()).map((b) => b.textContent?.replace(/\s+/g, ' ').trim());
-    expect(text).toEqual(['Sam Sales SALES', 'Rita Reviewer REVIEWER', 'Ada Admin ADMIN']);
+  it('lists every provided demo user with their role and what it can do', () => {
+    let f: ComponentFixture<LoginComponent>;
+    const options = buttons((f = render())).map((b) => ({
+      name: b.querySelector('.login-user-name')?.textContent,
+      role: b.querySelector('.login-user-role')?.textContent,
+    }));
+    expect(options).toEqual([
+      { name: 'Sam Sales', role: 'Sales' },
+      { name: 'Rita Reviewer', role: 'Risk reviewer' },
+      { name: 'Ada Admin', role: 'Administrator' },
+    ]);
+    expect(buttons(f)[1].textContent).toContain('approves or rejects');
   });
 
   it('signs in and returns to the page the guard intercepted', () => {

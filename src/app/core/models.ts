@@ -62,6 +62,12 @@ export interface Page<T> {
   size: number;
 }
 
+/** Application counts per status for the current user's scope (and search term). */
+export interface ApplicationSummary {
+  total: number;
+  byStatus: Record<ApplicationStatus, number>;
+}
+
 export interface ApplicationQuery {
   page: number;
   size: number;

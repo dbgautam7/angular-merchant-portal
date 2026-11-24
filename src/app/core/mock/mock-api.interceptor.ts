@@ -5,7 +5,7 @@ import {
   HttpResponse,
 } from '@angular/common/http';
 import { delay, dematerialize, materialize, Observable, of, throwError } from 'rxjs';
-import { ApplicationForm, MerchantApplication, Role, User } from '../models';
+import { ApplicationForm, ApplicationStatus, MerchantApplication, Role, User } from '../models';
 import { emptyForm, seed, USERS } from './mock-db';
 
 /**
@@ -100,6 +100,9 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
   }
 
   // ---- list ----
+  const matches = (a: MerchantApplication, q: string) =>
+    !q || a.business.legalName.toLowerCase().includes(q) || a.id.includes(q);
+
   if (path === '/api/applications' && method === 'GET') {
     const p = req.params;
     const q = (p.get('q') ?? '').toLowerCase();
@@ -110,9 +113,22 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
     const rows = db.apps
       .filter((a) => canView(user, a))
       .filter((a) => !status || a.status === status)
-      .filter((a) => !q || a.business.legalName.toLowerCase().includes(q) || a.id.includes(q));
+      .filter((a) => matches(a, q));
     const items = rows.slice((page - 1) * size, page * size).map((a) => toDto(a, user));
     return ok({ items, total: rows.length, page, size });
+  }
+  if (path === '/api/applications/summary' && method === 'GET') {
+    const q = (req.params.get('q') ?? '').toLowerCase();
+    const byStatus: Record<ApplicationStatus, number> = {
+      DRAFT: 0,
+      SUBMITTED: 0,
+      IN_REVIEW: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+    };
+    const rows = db.apps.filter((a) => canView(user, a) && matches(a, q));
+    rows.forEach((a) => byStatus[a.status]++);
+    return ok({ total: rows.length, byStatus });
   }
   if (path === '/api/applications' && method === 'POST') {
     if (!need('SALES')) return forbid();

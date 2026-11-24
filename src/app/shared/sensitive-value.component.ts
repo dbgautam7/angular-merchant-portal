@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input } from '@an
 import { toSignal } from '@angular/core/rxjs-interop';
 import { catchError, map, of, startWith, Subject, switchMap, timer } from 'rxjs';
 import { ApplicationApi } from '../core/api/application.api';
+import { IconComponent } from './icon.component';
 import { maskValue } from './mask';
 
 /** How long a revealed value stays on screen. */
@@ -26,28 +27,39 @@ const HIDDEN: RevealState = { status: 'hidden' };
  */
 @Component({
   selector: 'app-sensitive-value',
+  imports: [IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @let s = state();
-    @if (s.status === 'shown') {
-      <span class="font-monospace">{{ s.value }}</span>
-    } @else {
-      <span class="font-monospace" aria-hidden="true">{{ masked() }}</span>
-      <span class="visually-hidden">Hidden, ends in {{ lastFour() }}</span>
-    }
-    @if (canReveal()) {
-      <button
-        type="button"
-        class="btn btn-link btn-sm p-0 ms-2 align-baseline"
-        [disabled]="s.status === 'loading'"
-        (click)="toggle()"
-      >
-        {{ s.status === 'shown' ? 'Hide' : 'Reveal' }}
-        <span class="visually-hidden">{{ label() }}</span>
-      </button>
-    }
+    <span class="d-inline-flex flex-wrap align-items-center gap-2">
+      @if (s.status === 'shown') {
+        <app-icon class="text-warning" name="eye" />
+        <span class="font-monospace">{{ s.value }}</span>
+      } @else {
+        <app-icon class="text-body-secondary" name="lock" />
+        <span class="font-monospace" aria-hidden="true">{{ masked() }}</span>
+        <span class="visually-hidden">Hidden, ends in {{ lastFour() }}</span>
+      }
+      @if (canReveal()) {
+        <button
+          type="button"
+          class="btn btn-link btn-sm p-0"
+          [disabled]="s.status === 'loading'"
+          (click)="toggle()"
+        >
+          @if (s.status === 'loading') {
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+          }
+          {{ s.status === 'shown' ? 'Hide' : 'Reveal' }}
+          <span class="visually-hidden">{{ label() }}</span>
+        </button>
+      }
+      @if (s.status === 'shown') {
+        <span class="small text-body-secondary">Hides in 30 seconds</span>
+      }
+    </span>
     @if (s.status === 'error') {
-      <div class="small text-danger" role="alert">{{ s.message }}</div>
+      <div class="small text-danger mt-1" role="alert">{{ s.message }}</div>
     }
   `,
 })

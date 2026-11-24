@@ -1,7 +1,14 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ApplicationForm, ApplicationQuery, MerchantApplication, Page, User } from '../models';
+import {
+  ApplicationForm,
+  ApplicationQuery,
+  ApplicationSummary,
+  MerchantApplication,
+  Page,
+  User,
+} from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class ApplicationApi {
@@ -13,6 +20,10 @@ export class ApplicationApi {
       fromObject: { page: q.page, size: q.size, status: q.status, q: q.q },
     });
     return this.http.get<Page<MerchantApplication>>(this.base, { params });
+  }
+  /** Counts per status, scoped like the list; drives the dashboard's status tabs. */
+  summary(q: string): Observable<ApplicationSummary> {
+    return this.http.get<ApplicationSummary>(`${this.base}/summary`, { params: { q } });
   }
   get(id: string) {
     return this.http.get<MerchantApplication>(`${this.base}/${id}`);

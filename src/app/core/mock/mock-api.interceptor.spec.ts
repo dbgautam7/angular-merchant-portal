@@ -107,6 +107,22 @@ describe('mockApiInterceptor (server rules)', () => {
     expect(call(api.list({ ...query, q: 'error' })).status).toBe(500);
   });
 
+  it('counts applications per status within the user scope and search term', () => {
+    loginAs('u-rev-1');
+    const summary = call(api.summary('')).value!;
+    const assigned = call(api.list({ ...query, size: 100 })).value!;
+    expect(summary.total).toBe(assigned.total);
+    expect(Object.values(summary.byStatus).reduce((a, b) => a + b, 0)).toBe(summary.total);
+    expect(summary.byStatus.DRAFT).toBe(0); // drafts are never assigned
+
+    loginAs('u-admin');
+    expect(call(api.summary('')).value).toEqual({
+      total: 42,
+      byStatus: { DRAFT: 8, SUBMITTED: 9, IN_REVIEW: 9, APPROVED: 8, REJECTED: 8 },
+    });
+    expect(call(api.summary('merchant 4')).value?.total).toBe(4); // 4, 40, 41, 42
+  });
+
   it('answers 404 (not 403) outside the user scope so existence is not leaked', () => {
     loginAs('u-sales-1'); // app-001 belongs to u-sales-2
     expect(call(api.get('app-001')).status).toBe(404);

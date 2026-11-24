@@ -45,7 +45,7 @@ describe('SensitiveValueComponent', () => {
     expect(shown()).toBe('••••••••0001');
     expect(el().textContent).not.toContain('TAX900000001');
     // Screen readers hear "Hidden, ends in 0001" rather than eight "bullet"s.
-    expect(el().querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('••••••••0001');
+    expect(el().querySelector('.font-monospace')?.getAttribute('aria-hidden')).toBe('true');
     expect(el().querySelector('.visually-hidden')?.textContent).toBe('Hidden, ends in 0001');
   });
 

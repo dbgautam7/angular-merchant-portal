@@ -1,12 +1,150 @@
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+// Status filters: scroll sideways on phones instead of wrapping.
+.status-tabs {
+  display: flex;
+  gap: 0.25rem;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.status-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 50rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--bs-secondary-color);
+
+  &:hover {
+    text-decoration: none;
+    color: var(--bs-emphasis-color);
+    background-color: var(--app-surface-muted);
+  }
+
+  &.active {
+    color: var(--bs-primary-text-emphasis);
+    background-color: var(--bs-primary-bg-subtle);
+  }
+}
+
+.status-tab-count {
+  min-width: 1.5rem;
+  padding: 0 0.375rem;
+  border-radius: 50rem;
+  font-size: 0.75rem;
+  text-align: center;
+  background-color: var(--app-surface-muted);
+
+  .active > & {
+    background-color: var(--app-surface);
+  }
+}
+
+.search-field {
+  position: relative;
+  flex: 1 1 16rem;
+  max-width: 22rem;
+
+  .form-control {
+    padding-left: 2.25rem;
+  }
+
+  .search-icon {
+    position: absolute;
+    top: 50%;
+    left: 0.75rem;
+    transform: translateY(-50%);
+    color: var(--bs-secondary-color);
+    pointer-events: none;
+  }
+
+  @media (max-width: 575.98px) {
+    max-width: none;
+  }
+}
+
+.results {
+  position: relative;
+}
+
 // Rows from the previous query stay visible (dimmed) while the next page loads: no layout jump.
 .dashboard-table {
   transition: opacity 0.15s ease-in-out;
 
   &.is-busy {
-    opacity: 0.6;
+    opacity: 0.55;
   }
 
   @media (prefers-reduced-motion: reduce) {
     transition: none;
   }
+}
+
+// The whole row opens the application (the merchant link is stretched over it).
+tbody tr {
+  position: relative;
+}
+
+.merchant-link {
+  font-weight: 600;
+  color: var(--bs-emphasis-color);
+
+  &:hover {
+    color: var(--bs-primary);
+  }
+}
+
+.merchant-meta {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+}
+
+.row-action {
+  position: relative; // above the stretched link
+  z-index: 2;
+}
+
+.row-chevron {
+  margin-left: 0.5rem;
+  color: var(--bs-tertiary-color);
+}
+
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.pagination-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background-color: transparent;
+}
+
+.page-link {
+  display: inline-flex;
+  align-items: center;
+  min-width: 2rem;
+  justify-content: center;
 }

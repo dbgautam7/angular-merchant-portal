@@ -1,310 +1,405 @@
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <h1 class="h3 mb-0">
-    @if (draftId(); as id) {
-      Draft <span class="font-monospace">{{ id }}</span>
-    } @else {
-      New application
-    }
-  </h1>
-  <p class="small mb-0" role="status">
+<nav aria-label="Breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a routerLink="/applications">Applications</a></li>
+    <li class="breadcrumb-item active" aria-current="page">
+      {{ draftId() ? 'Edit application' : 'New application' }}
+    </li>
+  </ol>
+</nav>
+
+<header class="page-header">
+  <div>
+    <h1 class="page-title">{{ draftId() ? 'Edit application' : 'New application' }}</h1>
+    <p class="page-subtitle">
+      @if (draftId(); as id) {
+        Draft <span class="font-monospace">{{ id }}</span>
+      } @else {
+        Four short steps. Your answers are saved as you go.
+      }
+    </p>
+  </div>
+  <p class="save-status" role="status">
     @switch (draft.status()) {
       @case ('unsaved') {
-        <span class="text-body-secondary">Unsaved changes</span>
+        <span class="save-dot" aria-hidden="true"></span> Unsaved changes
       }
       @case ('saving') {
-        <span class="text-body-secondary">
-          <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
-          Saving draft…
-        </span>
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Saving draft…
       }
       @case ('saved') {
-        <span class="text-success">Draft saved at {{ draft.savedAt() | date: 'shortTime' }}</span>
+        <app-icon class="text-success" name="checkCircle" /> Draft saved at
+        {{ draft.savedAt() | date: 'shortTime' }}
       }
       @case ('error') {
-        <span class="text-danger">Draft not saved.</span>
-        <button
-          type="button"
-          class="btn btn-link btn-sm p-0 ms-1 align-baseline"
-          (click)="retrySave()"
-        >
-          Retry
-        </button>
+        <app-icon class="text-danger" name="alert" /> Draft not saved.
+        <button type="button" class="btn btn-link btn-sm p-0" (click)="retrySave()">Retry</button>
+      }
+      @default {
+        <app-icon name="clock" /> Saves automatically
       }
     }
   </p>
-</div>
+</header>
 
 @switch (loadState()) {
   @case ('loading') {
-    <div class="text-center py-5">
-      <div class="spinner-border" role="status">
-        <span class="visually-hidden">Loading draft…</span>
+    <div class="card">
+      <div class="empty-state">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading draft…</span>
+        </div>
       </div>
     </div>
   }
   @case ('error') {
-    <div class="alert alert-danger" role="alert">
-      Could not load this draft. It may have been submitted, or it belongs to someone else.
+    <div class="card">
+      <div class="empty-state" role="alert">
+        <span class="empty-state-icon text-danger"><app-icon name="alert" /></span>
+        <h2 class="h6 mb-0">Could not load this draft</h2>
+        <p>It may have been submitted already, or it belongs to someone else.</p>
+        <a class="btn btn-outline-primary btn-sm mt-2" routerLink="/applications">
+          <app-icon name="arrowLeft" /> Back to applications
+        </a>
+      </div>
     </div>
   }
   @default {
-    <nav aria-label="Application steps">
-      <ol class="wizard-steps nav nav-pills mb-4">
-        @for (s of steps; track s.key; let i = $index) {
-          <li class="nav-item">
+    <div class="wizard">
+      <nav class="wizard-steps card" aria-label="Application steps">
+        <ol class="stepper">
+          @for (s of steps; track s.key; let i = $index) {
+            @let state = stepState(i);
+            <li class="stepper-item" [class]="'is-' + state">
+              <button
+                type="button"
+                class="stepper-button"
+                [attr.aria-current]="state === 'current' ? 'step' : null"
+                [disabled]="submitting()"
+                (click)="goTo(i)"
+              >
+                <span class="stepper-marker" aria-hidden="true">
+                  @switch (state) {
+                    @case ('complete') {
+                      <app-icon name="check" [strokeWidth]="3" />
+                    }
+                    @case ('error') {
+                      !
+                    }
+                    @default {
+                      {{ i + 1 }}
+                    }
+                  }
+                </span>
+                <span class="stepper-text">
+                  <span class="stepper-label">{{ s.label }}</span>
+                  <span class="stepper-description">{{ s.description }}</span>
+                </span>
+                @if (state === 'complete') {
+                  <span class="visually-hidden">(complete)</span>
+                } @else if (state === 'error') {
+                  <span class="visually-hidden">(needs attention)</span>
+                }
+              </button>
+            </li>
+          }
+        </ol>
+      </nav>
+
+      <form class="card wizard-form" [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
+        <div class="card-header wizard-form-header">
+          <p class="wizard-step-count">Step {{ stepIndex() + 1 }} of {{ steps.length }}</p>
+          <h2 id="step-heading" class="h5 mb-1" tabindex="-1">{{ step().title }}</h2>
+          <p class="text-body-secondary small mb-0">
+            {{ step().intro }}
+            @if (!isReview()) {
+              Fields marked <span class="text-danger" aria-hidden="true">*</span
+              ><span class="visually-hidden">with a star</span> are required.
+            }
+          </p>
+        </div>
+
+        <div class="card-body">
+          @switch (step().key) {
+            @case ('business') {
+              <fieldset formGroupName="business" class="row g-3" aria-labelledby="step-heading">
+                <app-form-field class="col-md-6" label="Legal name">
+                  <input
+                    appFieldControl
+                    formControlName="legalName"
+                    class="form-control"
+                    autocomplete="organization"
+                  />
+                </app-form-field>
+                <app-form-field
+                  class="col-md-6"
+                  label="Registration number"
+                  hint="For example, REG-123456"
+                >
+                  <input
+                    appFieldControl
+                    formControlName="registrationNumber"
+                    class="form-control font-monospace"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </app-form-field>
+                <app-form-field class="col-md-6" label="Category">
+                  <select appFieldControl formControlName="category" class="form-select">
+                    <option value="">Choose a category</option>
+                    @for (c of categories; track c.value) {
+                      <option [value]="c.value">{{ c.label }}</option>
+                    }
+                  </select>
+                </app-form-field>
+                <app-form-field
+                  class="col-md-6"
+                  label="Website"
+                  hint="Optional. Must start with https://"
+                >
+                  <input
+                    appFieldControl
+                    formControlName="website"
+                    type="url"
+                    class="form-control"
+                    autocomplete="url"
+                    placeholder="https://"
+                  />
+                </app-form-field>
+              </fieldset>
+            }
+            @case ('owner') {
+              <fieldset formGroupName="owner" class="row g-3" aria-labelledby="step-heading">
+                <app-form-field class="col-md-6" label="Full name">
+                  <input
+                    appFieldControl
+                    formControlName="fullName"
+                    class="form-control"
+                    autocomplete="name"
+                  />
+                </app-form-field>
+                <app-form-field class="col-md-6" label="Email">
+                  <input
+                    appFieldControl
+                    formControlName="email"
+                    type="email"
+                    class="form-control"
+                    autocomplete="email"
+                  />
+                </app-form-field>
+                <app-form-field
+                  class="col-md-6"
+                  label="Date of birth"
+                  hint="The owner must be 18 or over"
+                >
+                  <input
+                    appFieldControl
+                    formControlName="dateOfBirth"
+                    type="date"
+                    class="form-control"
+                    autocomplete="bday"
+                  />
+                </app-form-field>
+                <app-form-field
+                  class="col-md-6"
+                  label="Tax ID"
+                  hint="TAX followed by 9 digits. Shown masked after saving."
+                >
+                  <input
+                    appFieldControl
+                    formControlName="taxId"
+                    class="form-control font-monospace"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </app-form-field>
+              </fieldset>
+            }
+            @case ('banking') {
+              <fieldset formGroupName="banking" class="row g-3" aria-labelledby="step-heading">
+                <app-form-field class="col-md-6" label="Bank name">
+                  <input
+                    appFieldControl
+                    formControlName="bankName"
+                    class="form-control"
+                    autocomplete="off"
+                  />
+                </app-form-field>
+                <app-form-field
+                  class="col-md-6"
+                  label="Account number"
+                  hint="10 to 18 digits, no spaces"
+                >
+                  <input
+                    appFieldControl
+                    formControlName="accountNumber"
+                    class="form-control font-monospace"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </app-form-field>
+                <app-form-field class="col-md-6" label="Expected monthly volume">
+                  <div class="input-group">
+                    <span class="input-group-text" aria-hidden="true">USD</span>
+                    <input
+                      appFieldControl
+                      formControlName="monthlyVolume"
+                      type="number"
+                      min="1"
+                      step="1"
+                      class="form-control"
+                    />
+                  </div>
+                </app-form-field>
+              </fieldset>
+            }
+            @case ('review') {
+              @let v = form.getRawValue();
+              <div class="review">
+                <section class="review-section" aria-labelledby="review-business">
+                  <div class="review-section-header">
+                    <h3 id="review-business" class="section-title">
+                      <span class="icon-tile"><app-icon name="building" /></span> Business
+                    </h3>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      aria-label="Change business details"
+                      (click)="goTo(0)"
+                    >
+                      <app-icon name="pencil" /> Change
+                    </button>
+                  </div>
+                  <dl class="dl-grid">
+                    <div>
+                      <dt>Legal name</dt>
+                      <dd>{{ v.business.legalName }}</dd>
+                    </div>
+                    <div>
+                      <dt>Registration number</dt>
+                      <dd class="font-monospace">{{ v.business.registrationNumber }}</dd>
+                    </div>
+                    <div>
+                      <dt>Category</dt>
+                      <dd>{{ v.business.category | categoryLabel }}</dd>
+                    </div>
+                    <div>
+                      <dt>Website</dt>
+                      <dd>{{ v.business.website || '—' }}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section class="review-section" aria-labelledby="review-owner">
+                  <div class="review-section-header">
+                    <h3 id="review-owner" class="section-title">
+                      <span class="icon-tile"><app-icon name="user" /></span> Owner
+                    </h3>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      aria-label="Change owner details"
+                      (click)="goTo(1)"
+                    >
+                      <app-icon name="pencil" /> Change
+                    </button>
+                  </div>
+                  <dl class="dl-grid">
+                    <div>
+                      <dt>Full name</dt>
+                      <dd>{{ v.owner.fullName }}</dd>
+                    </div>
+                    <div>
+                      <dt>Email</dt>
+                      <dd>{{ v.owner.email }}</dd>
+                    </div>
+                    <div>
+                      <dt>Date of birth</dt>
+                      <dd>{{ v.owner.dateOfBirth | date: 'mediumDate' }}</dd>
+                    </div>
+                    <div>
+                      <dt>Tax ID</dt>
+                      <dd class="font-monospace">{{ mask(v.owner.taxId) }}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section class="review-section" aria-labelledby="review-banking">
+                  <div class="review-section-header">
+                    <h3 id="review-banking" class="section-title">
+                      <span class="icon-tile"><app-icon name="bank" /></span> Banking
+                    </h3>
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary"
+                      aria-label="Change banking details"
+                      (click)="goTo(2)"
+                    >
+                      <app-icon name="pencil" /> Change
+                    </button>
+                  </div>
+                  <dl class="dl-grid">
+                    <div>
+                      <dt>Bank name</dt>
+                      <dd>{{ v.banking.bankName }}</dd>
+                    </div>
+                    <div>
+                      <dt>Account number</dt>
+                      <dd class="font-monospace">{{ mask(v.banking.accountNumber) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Monthly volume</dt>
+                      <dd>USD {{ v.banking.monthlyVolume | number: '1.0-0' }}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <div class="alert alert-info d-flex gap-2 mb-0">
+                  <app-icon name="shield" />
+                  <span>
+                    Once submitted, the application can no longer be edited. A risk reviewer will
+                    approve or reject it, and every decision is recorded in its history.
+                  </span>
+                </div>
+              </div>
+              @if (submitError(); as message) {
+                <div class="alert alert-danger d-flex gap-2 mt-3 mb-0" role="alert">
+                  <app-icon name="alert" /> {{ message }}
+                </div>
+              }
+            }
+          }
+        </div>
+
+        <div class="card-footer wizard-actions">
+          @if (stepIndex() > 0) {
             <button
               type="button"
-              class="nav-link"
-              [class.active]="i === stepIndex()"
-              [attr.aria-current]="i === stepIndex() ? 'step' : null"
+              class="btn btn-outline-secondary"
               [disabled]="submitting()"
-              (click)="goTo(i)"
+              (click)="goTo(stepIndex() - 1)"
             >
-              {{ i + 1 }}. {{ s.label }}
-              @if (isComplete(s.key)) {
-                <span aria-hidden="true">✓</span>
-                <span class="visually-hidden">(complete)</span>
+              <app-icon name="arrowLeft" /> Back
+            </button>
+          } @else {
+            <span></span>
+          }
+          @if (isReview()) {
+            <button type="submit" class="btn btn-success" [disabled]="submitting()">
+              @if (submitting()) {
+                <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                Submitting…
+              } @else {
+                <app-icon name="send" /> Submit application
               }
             </button>
-          </li>
-        }
-      </ol>
-    </nav>
-
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate>
-      <h2 id="step-heading" class="h5 mb-1" tabindex="-1">{{ step().title }}</h2>
-      @if (!isReview()) {
-        <p class="small text-body-secondary mb-3">
-          Fields marked <span class="text-danger">*</span> are required. Your answers are saved as
-          you type.
-        </p>
-      }
-
-      @switch (step().key) {
-        @case ('business') {
-          <fieldset formGroupName="business" class="row g-3" aria-labelledby="step-heading">
-            <app-form-field class="col-md-6" label="Legal name">
-              <input
-                appFieldControl
-                formControlName="legalName"
-                class="form-control"
-                autocomplete="organization"
-              />
-            </app-form-field>
-            <app-form-field
-              class="col-md-6"
-              label="Registration number"
-              hint="For example, REG-123456"
-            >
-              <input
-                appFieldControl
-                formControlName="registrationNumber"
-                class="form-control"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </app-form-field>
-            <app-form-field class="col-md-6" label="Category">
-              <select appFieldControl formControlName="category" class="form-select">
-                <option value="">Choose a category</option>
-                @for (c of categories; track c.value) {
-                  <option [value]="c.value">{{ c.label }}</option>
-                }
-              </select>
-            </app-form-field>
-            <app-form-field
-              class="col-md-6"
-              label="Website"
-              hint="Optional. Must start with https://"
-            >
-              <input
-                appFieldControl
-                formControlName="website"
-                type="url"
-                class="form-control"
-                autocomplete="url"
-              />
-            </app-form-field>
-          </fieldset>
-        }
-        @case ('owner') {
-          <fieldset formGroupName="owner" class="row g-3" aria-labelledby="step-heading">
-            <app-form-field class="col-md-6" label="Full name">
-              <input
-                appFieldControl
-                formControlName="fullName"
-                class="form-control"
-                autocomplete="name"
-              />
-            </app-form-field>
-            <app-form-field class="col-md-6" label="Email">
-              <input
-                appFieldControl
-                formControlName="email"
-                type="email"
-                class="form-control"
-                autocomplete="email"
-              />
-            </app-form-field>
-            <app-form-field
-              class="col-md-6"
-              label="Date of birth"
-              hint="The owner must be 18 or over"
-            >
-              <input
-                appFieldControl
-                formControlName="dateOfBirth"
-                type="date"
-                class="form-control"
-                autocomplete="bday"
-              />
-            </app-form-field>
-            <app-form-field class="col-md-6" label="Tax ID" hint="TAX followed by 9 digits">
-              <input
-                appFieldControl
-                formControlName="taxId"
-                class="form-control"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </app-form-field>
-          </fieldset>
-        }
-        @case ('banking') {
-          <fieldset formGroupName="banking" class="row g-3" aria-labelledby="step-heading">
-            <app-form-field class="col-md-6" label="Bank name">
-              <input
-                appFieldControl
-                formControlName="bankName"
-                class="form-control"
-                autocomplete="off"
-              />
-            </app-form-field>
-            <app-form-field class="col-md-6" label="Account number" hint="10 to 18 digits">
-              <input
-                appFieldControl
-                formControlName="accountNumber"
-                class="form-control"
-                inputmode="numeric"
-                autocomplete="off"
-                spellcheck="false"
-              />
-            </app-form-field>
-            <app-form-field class="col-md-6" label="Expected monthly volume (USD)">
-              <input
-                appFieldControl
-                formControlName="monthlyVolume"
-                type="number"
-                min="1"
-                step="1"
-                class="form-control"
-              />
-            </app-form-field>
-          </fieldset>
-        }
-        @case ('review') {
-          @let v = form.getRawValue();
-          <div class="row g-3 mt-1">
-            <section class="col-md-4" aria-labelledby="review-business">
-              <div class="d-flex justify-content-between align-items-baseline">
-                <h3 id="review-business" class="h6">Business</h3>
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm p-0"
-                  aria-label="Change business details"
-                  (click)="goTo(0)"
-                >
-                  Change
-                </button>
-              </div>
-              <dl class="review-list">
-                <dt>Legal name</dt>
-                <dd>{{ v.business.legalName }}</dd>
-                <dt>Registration number</dt>
-                <dd>{{ v.business.registrationNumber }}</dd>
-                <dt>Category</dt>
-                <dd>{{ v.business.category | categoryLabel }}</dd>
-                <dt>Website</dt>
-                <dd>{{ v.business.website || '—' }}</dd>
-              </dl>
-            </section>
-            <section class="col-md-4" aria-labelledby="review-owner">
-              <div class="d-flex justify-content-between align-items-baseline">
-                <h3 id="review-owner" class="h6">Owner</h3>
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm p-0"
-                  aria-label="Change owner details"
-                  (click)="goTo(1)"
-                >
-                  Change
-                </button>
-              </div>
-              <dl class="review-list">
-                <dt>Full name</dt>
-                <dd>{{ v.owner.fullName }}</dd>
-                <dt>Email</dt>
-                <dd>{{ v.owner.email }}</dd>
-                <dt>Date of birth</dt>
-                <dd>{{ v.owner.dateOfBirth | date: 'mediumDate' }}</dd>
-                <dt>Tax ID</dt>
-                <dd class="font-monospace">{{ mask(v.owner.taxId) }}</dd>
-              </dl>
-            </section>
-            <section class="col-md-4" aria-labelledby="review-banking">
-              <div class="d-flex justify-content-between align-items-baseline">
-                <h3 id="review-banking" class="h6">Banking</h3>
-                <button
-                  type="button"
-                  class="btn btn-link btn-sm p-0"
-                  aria-label="Change banking details"
-                  (click)="goTo(2)"
-                >
-                  Change
-                </button>
-              </div>
-              <dl class="review-list">
-                <dt>Bank name</dt>
-                <dd>{{ v.banking.bankName }}</dd>
-                <dt>Account number</dt>
-                <dd class="font-monospace">{{ mask(v.banking.accountNumber) }}</dd>
-                <dt>Monthly volume</dt>
-                <dd>USD {{ v.banking.monthlyVolume | number: '1.0-0' }}</dd>
-              </dl>
-            </section>
-          </div>
-          @if (submitError(); as message) {
-            <div class="alert alert-danger" role="alert">{{ message }}</div>
+          } @else {
+            <button type="submit" class="btn btn-primary">
+              Next <app-icon name="arrowRight" />
+            </button>
           }
-        }
-      }
-
-      <div class="d-flex justify-content-between mt-4">
-        @if (stepIndex() > 0) {
-          <button
-            type="button"
-            class="btn btn-outline-secondary"
-            [disabled]="submitting()"
-            (click)="goTo(stepIndex() - 1)"
-          >
-            Back
-          </button>
-        } @else {
-          <span></span>
-        }
-        @if (isReview()) {
-          <button type="submit" class="btn btn-success" [disabled]="submitting()">
-            @if (submitting()) {
-              <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
-              Submitting…
-            } @else {
-              Submit application
-            }
-          </button>
-        } @else {
-          <button type="submit" class="btn btn-primary">Next</button>
-        }
-      </div>
-    </form>
+        </div>
+      </form>
+    </div>
   }
 }

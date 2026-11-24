@@ -75,6 +75,11 @@ describe('ApplicationWizardComponent', () => {
     Array.from(el().querySelectorAll('button')).find((b) =>
       b.textContent?.trim().startsWith(label),
     )!;
+  /** A stepper button, found by its step label ("Banking"). */
+  const step = (label: string) =>
+    Array.from(el().querySelectorAll<HTMLButtonElement>('.stepper-button')).find(
+      (b) => b.querySelector('.stepper-label')?.textContent?.trim() === label,
+    )!;
   const field = (label: string) => {
     const match = Array.from(el().querySelectorAll('label')).find(
       (l) => l.textContent?.replace('*', '').trim() === label,
@@ -121,6 +126,12 @@ describe('ApplicationWizardComponent', () => {
     expect(heading()).toBe('Business details');
     expect(el().querySelectorAll('.invalid-feedback')).toHaveLength(3); // website is optional
     expect(document.activeElement).toBe(field('Legal name'));
+    expect(step('Business').getAttribute('aria-current')).toBe('step');
+
+    step('Owner').click(); // the Business step now shows that it needs attention
+    await settle();
+    expect(heading()).toBe('Business details');
+    step('Business').click();
   });
 
   it('treats Enter on a data step as Next, never as submit, and focuses the new step', async () => {
@@ -136,15 +147,17 @@ describe('ApplicationWizardComponent', () => {
 
   it('jumps ahead only through valid steps', async () => {
     await open('/applications/new');
-    button('3. Banking').click();
+    step('Banking').click();
     await settle();
     expect(heading()).toBe('Business details');
 
     fillBusiness();
-    button('3. Banking').click();
+    step('Banking').click();
     await settle();
     expect(heading()).toBe('Owner details'); // stops at the next invalid step
-    expect(text()).toContain('1. Business ✓');
+    expect(step('Business').textContent).toContain('(complete)');
+    expect(step('Business').getAttribute('aria-current')).toBeNull();
+    expect(step('Owner').getAttribute('aria-current')).toBe('step');
   });
 
   it('creates the draft on the first auto-save, then saves into it', async () => {
@@ -186,7 +199,7 @@ describe('ApplicationWizardComponent', () => {
 
     await pause();
     expect(api.saveDraft).not.toHaveBeenCalled();
-    expect(saveStatus()).toBe('');
+    expect(saveStatus()).toBe('Saves automatically');
   });
 
   it('opens a submitted application read-only and reports load errors', async () => {
@@ -203,7 +216,7 @@ describe('ApplicationWizardComponent', () => {
 
   it('masks the tax ID and account number on the review step', async () => {
     await open('/applications/app-005/edit');
-    button('4. Review').click();
+    step('Review').click();
     await settle();
 
     expect(heading()).toBe('Review and submit');
@@ -216,7 +229,7 @@ describe('ApplicationWizardComponent', () => {
   it('saves the latest changes before submitting, then opens the submitted application', async () => {
     await open('/applications/app-005/edit');
     fill('Legal name', 'Renamed Demo Ltd');
-    button('4. Review').click();
+    step('Review').click();
     await settle();
     button('Submit application').click(); // before the auto-save debounce has elapsed
     await settle();
@@ -233,7 +246,7 @@ describe('ApplicationWizardComponent', () => {
   it('keeps the answers and shows an error when submitting fails', async () => {
     api.submit.mockReturnValueOnce(throwError(() => new Error('500')));
     await open('/applications/app-005/edit');
-    button('4. Review').click();
+    step('Review').click();
     await settle();
     button('Submit application').click();
     await settle();

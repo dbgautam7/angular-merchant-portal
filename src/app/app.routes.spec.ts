@@ -33,6 +33,16 @@ describe('app routes', () => {
     expect(wizard.canDeactivate).toEqual([unsavedChangesGuard]);
   });
 
+  it('gives every page a title for the browser tab', () => {
+    const pages = all.filter((r) => r.loadComponent);
+    expect(pages.map((r) => r.title)).toEqual([
+      'Sign in',
+      'Applications',
+      'Application form',
+      'Application details',
+    ]);
+  });
+
   it('redirects the root and unknown URLs to /applications', () => {
     expect(routes.find((r) => r.path === '')).toMatchObject({
       pathMatch: 'full',

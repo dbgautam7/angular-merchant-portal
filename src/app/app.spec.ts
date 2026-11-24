@@ -45,13 +45,45 @@ describe('App shell (role-aware navigation)', () => {
     TestBed.resetTestingModule();
     const reviewer = nav(render({ id: 'u-rev-1', name: 'Rita Reviewer', role: 'REVIEWER' }));
     expect(reviewer).toContain('Applications');
-    expect(reviewer).toContain('Rita Reviewer · REVIEWER');
+    expect(reviewer).toContain('Rita Reviewer');
+    expect(reviewer).toContain('Risk reviewer');
     expect(reviewer).not.toContain('New application');
   });
 
+  const button = (f: ComponentFixture<App>, label: string) =>
+    Array.from((f.nativeElement as HTMLElement).querySelectorAll('button')).find(
+      (b) => b.textContent?.trim() === label,
+    )!;
+
   it('logs out from the navbar', () => {
     const f = render({ id: 'u-admin', name: 'Ada Admin', role: 'ADMIN' });
-    (f.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('nav button')!.click();
+    button(f, 'Log out').click();
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens and closes the phone menu, announcing its state', () => {
+    const f = render({ id: 'u-admin', name: 'Ada Admin', role: 'ADMIN' });
+    const toggle = button(f, 'Menu');
+    const menu = (f.nativeElement as HTMLElement).querySelector('#main-menu')!;
+    expect(toggle.getAttribute('aria-controls')).toBe('main-menu');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+
+    toggle.click();
+    f.detectChanges();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(menu.classList).toContain('show');
+
+    toggle.click();
+    f.detectChanges();
+    expect(menu.classList).not.toContain('show');
+  });
+
+  it('skip link moves focus to the main content without leaving the page', () => {
+    const f = render(null);
+    const link = (f.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.skip-link')!;
+    const click = new MouseEvent('click', { cancelable: true });
+    link.dispatchEvent(click);
+    expect(click.defaultPrevented).toBe(true); // href="#main" would resolve to "/#main"
+    expect(document.activeElement?.id).toBe('main');
   });
 });

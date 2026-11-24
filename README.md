@@ -34,7 +34,7 @@ npm run build
 | Reactive Forms, custom validation    | Typed `NonNullableFormBuilder` form, one group per step; custom validators in `shared/validators.ts`; draft auto-save in `shared/auto-save.ts`                                          |
 | Change detection                     | New components use `OnPush`; signals tell Angular exactly what changed. Form fields turn `AbstractControl.events` into signals                                                          |
 | Mock API                             | `core/mock/mock-api.interceptor.ts`, the last interceptor in the chain, acting as the server                                                                                            |
-| Bootstrap 5 + SCSS, responsive       | Bootstrap grid, table and utilities; global overrides in `styles.scss`, component SCSS; secondary columns hidden below `md`                                                             |
+| Bootstrap 5 + SCSS, responsive       | Bootstrap built from Sass with a theme (`src/styles/`): tokens, light and dark mode, only the modules used; layouts tested at phone and desktop widths                                  |
 | Vitest + TestBed                     | Angular's `@angular/build:unit-test` builder with `runner: vitest` and jsdom                                                                                                            |
 | Masking, role-based reveal, CSP      | `SensitiveValueComponent` (masked always, audited reveal for REVIEWER/ADMIN); CSP with Trusted Types in `src/index.html`; see [Security](#security)                                     |
 | Type safety                          | `strict` TypeScript plus `strictTemplates`, `strictInjectionParameters`, `typeCheckHostBindings`                                                                                        |
@@ -43,7 +43,8 @@ npm run build
 
 ```
 src/app/
-  app.ts          shell: skip link, role-aware navbar, <router-outlet>
+  app.ts          shell: skip link, sticky role-aware navbar (collapses on phones), <router-outlet>
+  core/title-strategy.ts  "Applications · Merchant Portal" page titles
   app.config.ts   providers: router (input binding), HttpClient + interceptors, demo-user wiring
   app.routes.ts   lazy route table with guards
   core/
@@ -51,8 +52,8 @@ src/app/
     api/          ApplicationApi, the typed HTTP client (one method per endpoint)
     auth/         AuthService (session), authInterceptor, guards, DEMO_USERS token
     mock/         in-memory backend (interceptor) and fictional seed data
-  shared/         reusable UI and logic: StatusBadge, form field, sensitive value, validators, auto-save,
-                  masking, category labels, focus helper, unsaved-changes guard
+  shared/         reusable UI and logic: icons, status badge, form field, sensitive value, validators,
+                  auto-save, masking, roles and category labels, focus helper, unsaved-changes guard
   features/       one folder per lazy route: login, dashboard, application (wizard), detail
 ```
 
@@ -67,6 +68,7 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
 | `POST /api/auth/login`                     | anyone               | `{ username }` (a demo user id) returns the user plus access and refresh tokens |
 | `POST /api/auth/refresh`                   | refresh-token holder | rotates the pair; each refresh token works **once**                             |
 | `GET /api/applications?page&size&status&q` | all roles            | server-side paging and filtering, scoped by role; `q=error` simulates a 500     |
+| `GET /api/applications/summary?q`          | all roles            | counts per status in the same scope, for the dashboard tabs                     |
 | `POST /api/applications`                   | SALES                | creates an empty draft                                                          |
 | `GET /api/applications/:id`                | anyone in scope      | sensitive fields come back masked                                               |
 | `PUT /api/applications/:id`                | SALES (own draft)    | saves a draft; 403 once submitted                                               |
@@ -154,6 +156,21 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 - **Angular's own protection.** Templates escape interpolated values and sanitize bound URLs, so a merchant website of `javascript:…` would never run. The code never uses `bypassSecurityTrust*` or `innerHTML`.
 - **Tokens** live in memory only (see Authentication). **No secrets or real data**: all users and merchants are fictional (`example.com`, made-up numbers).
 
+## UI & design
+
+- **Theme.** Bootstrap 5 is compiled from its Sass source (`src/styles/_bootstrap.scss`) with the app's design tokens (`_theme.scss`): an indigo brand colour, slate neutrals, the system font (nothing to download, so the CSP stays `font-src 'self'`), softer radii and shadows. Only the Bootstrap modules the app uses are compiled; the global CSS went from 231 kB to 171 kB (23 kB → 18 kB over the wire). Bootstrap 5.3 has no `@use` API yet, so its documented `@import` theming is used and that single Sass deprecation is silenced in `angular.json`.
+- **Light and dark mode** follow the operating system (`prefers-color-scheme`), with no toggle or script. Every custom style uses Bootstrap's CSS variables, so both modes come from the same rules.
+- **Shared patterns** (`src/styles/_app.scss`): page header, cards, data table, soft status badges with a dot, empty and error states, a thin loading bar, label-above-value detail grids, and section titles with icon tiles.
+- **Icons** are a small set drawn for the app (`shared/icon.component.ts`) and rendered as inline SVG through Angular bindings: no icon font, nothing extra for the CSP to allow, and no `innerHTML`. They are decorative (`aria-hidden`); every control has a text label.
+- **Pages:**
+  - _Shell_: sticky, translucent top bar with the brand mark, active-page highlight and a user chip. On phones the links fold into a menu button (`aria-expanded`), which closes after navigating.
+  - _Sign in_: a two-panel card. Each demo user shows their role and what it can do, and the chosen one shows a spinner.
+  - _Applications_: status tabs with live counts (links, so every filter has a URL), a search field, and a table whose merchant name opens the row (the link stretches over the whole row). Skeleton rows on first load, a thin bar plus dimmed rows on later loads, real empty and error states, and numbered pagination ("Showing 11–20 of 42"). Secondary columns fold into the merchant cell on phones.
+  - _Application form_: a stepper (vertical beside the form on desktop, horizontal above it on phones) whose markers show the current step, completed steps with a check, and visited steps with errors with a "!". The form card has a step count, intro text, and a sticky Back/Next bar. The review step groups answers in sections with Change buttons. Save status sits in a pill in the header.
+  - _Application details_: a lifecycle tracker (Draft → Submitted → In review → Approved/Rejected), section cards, the risk history as a timeline, and decision and assignment panels in a sticky column. Masked values show a lock, and a revealed one shows an eye and when it will hide.
+- **Accessibility** carried through the redesign: one `h1` per page, labelled landmarks, `aria-current` on the active nav link, filter tab, page number and step, visually hidden text wherever an icon carries meaning, and visible focus rings. Motion respects `prefers-reduced-motion`. The skip link moves focus to the page content directly: a plain `href="#main"` resolves against `<base href="/">` to `/#main` and would reload the app at the root (a bug since stage 1, fixed here).
+- **Checked visually.** Every page was screenshotted in headless Chromium at 1280 px and 390 px, in light and dark mode, with no CSP violations or console errors.
+
 ## Architecture decisions
 
 - **Domain model first.** `core/models.ts` defines roles, statuses, the three-part application form (business, owner, banking), risk events and the paging/query contracts. Every later layer is typed against it.
@@ -165,13 +182,13 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 
 ## Tests (`npm test`)
 
-- `app.routes.spec`: every page is lazy-loaded; one wizard route matches `new` and `:id/edit`, sits before `:id` and carries both guards; root and unknown URLs redirect.
-- `mock-api.interceptor.spec`: the server rules, tested through `ApplicationApi`. Covers 401 for missing or expired tokens, refresh-token rotation, role-scoped lists, server-side paging and filtering, 404 for out-of-scope records, masking with audited reveal, the draft lifecycle, role checks on decisions and assignment, and server-side validation of decisions (no unknown values, no blank comments, no deciding twice) and assignment (only while under review).
+- `app.routes.spec`: every page is lazy-loaded; one wizard route matches `new` and `:id/edit`, sits before `:id` and carries both guards; every page has a title; root and unknown URLs redirect.
+- `mock-api.interceptor.spec`: the server rules, tested through `ApplicationApi`. Covers per-status counts within the user's scope and search, 401 for missing or expired tokens, refresh-token rotation, role-scoped lists, server-side paging and filtering, 404 for out-of-scope records, masking with audited reveal, the draft lifecycle, role checks on decisions and assignment, and server-side validation of decisions (no unknown values, no blank comments, no deciding twice) and assignment (only while under review).
 - `auth.interceptor.spec`: bearer header on API calls only; **3 concurrent 401s → exactly 1 refresh → 3 retries with the new token**; a late 401 reuses the new token; no second retry; one logout when the refresh fails; non-401 errors and signed-out requests pass through. One end-to-end test does the same against the real mock `POST /api/auth/refresh`.
 - `guards.spec`: anonymous users go to `/login` with `returnUrl`; role blocking and multi-role access.
 - `login.component.spec`: `safeReturnUrl` rejects external, protocol-relative and `javascript:` URLs; sign-in returns to the intercepted page; failures show an error and re-enable the buttons.
-- `app.spec`: the navbar is hidden while signed out, "New application" shows for SALES only, and logout works.
-- `dashboard.component.spec` (real router via `RouterTestingHarness`): the URL drives the API query; invalid params fall back; role-aware actions for SALES and REVIEWER; debounced search resets the page and replaces history; the status filter syncs both ways; paging and its disabled ends; error → Retry recovers with the same filters; rows stay visible and busy while the next page loads; Clear filters on an empty result.
+- `app.spec`: the navbar is hidden while signed out, "New application" shows for SALES only, logout works, the phone menu opens and closes with `aria-expanded`, and the skip link moves focus without leaving the page.
+- `dashboard.component.spec` (real router via `RouterTestingHarness`): the URL drives the API query; invalid params fall back; role-aware actions for SALES and REVIEWER; debounced search resets the page and replaces history; status tabs are links that keep the search, reset the page and mark the current tab; tabs show counts and still work if counts fail; numbered pagination and the page-gap algorithm; paging and its disabled ends; error → Retry recovers with the same filters; rows stay visible and busy while the next page loads; Clear filters on an empty result.
 - `validators.spec`: each format, empty values left to `required`, `https` only, whitespace-only text, the 18th-birthday boundary, impossible dates, and the error messages.
 - `form-field.spec` (OnPush host): label/`id` link, required marker and `aria-required`, no error before touch, error and hint in `aria-describedby`, updates from code under OnPush.
 - `auto-save.spec` (fake timers): one debounced save of the latest value; no request for unchanged values; saves never overlap and a queued save sends the newest value; failure, then retry via `flush()`; `flush()` waits for a running save; `reset()` after load.
@@ -183,7 +200,6 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 
 - A real backend: remove `mockApiInterceptor` and the `DEMO_USERS` provider; send the CSP as a header with a nonce, plus `frame-ancestors`.
 - End-to-end tests (Playwright) for the main journeys, including the CSP check above.
-- Page titles per route (`TitleStrategy`), so screen readers announce each navigation.
 
 ## AI assistance disclosure
 

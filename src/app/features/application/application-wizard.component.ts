@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { catchError, map, Observable, of, startWith, switchMap, tap, throwError } from 'rxjs';
 import { ApplicationApi } from '../../core/api/application.api';
 import { ApplicationForm, MerchantApplication } from '../../core/models';
@@ -18,6 +18,7 @@ import { autoSave } from '../../shared/auto-save';
 import { CATEGORY_LABELS, CategoryLabelPipe } from '../../shared/categories';
 import { injectFocus } from '../../shared/focus';
 import { FieldControlDirective, FormFieldComponent } from '../../shared/form-field';
+import { IconComponent } from '../../shared/icon.component';
 import { maskValue } from '../../shared/mask';
 import { CanLeave } from '../../shared/unsaved-changes.guard';
 import {
@@ -35,11 +36,43 @@ type SectionKey = keyof ApplicationForm;
 type StepKey = SectionKey | 'review';
 type LoadState = 'loading' | 'ready' | 'error';
 
-const STEPS: readonly { key: StepKey; label: string; title: string }[] = [
-  { key: 'business', label: 'Business', title: 'Business details' },
-  { key: 'owner', label: 'Owner', title: 'Owner details' },
-  { key: 'banking', label: 'Banking', title: 'Banking details' },
-  { key: 'review', label: 'Review', title: 'Review and submit' },
+type StepState = 'current' | 'complete' | 'error' | 'upcoming';
+
+const STEPS: readonly {
+  key: StepKey;
+  label: string;
+  description: string;
+  title: string;
+  intro: string;
+}[] = [
+  {
+    key: 'business',
+    label: 'Business',
+    description: 'Legal name and registration',
+    title: 'Business details',
+    intro: 'The merchant’s business, exactly as it is registered.',
+  },
+  {
+    key: 'owner',
+    label: 'Owner',
+    description: 'Identity and contact',
+    title: 'Owner details',
+    intro: 'The person who owns or controls the business.',
+  },
+  {
+    key: 'banking',
+    label: 'Banking',
+    description: 'Payout account and volume',
+    title: 'Banking details',
+    intro: 'Where settlements are paid, and the expected monthly card volume.',
+  },
+  {
+    key: 'review',
+    label: 'Review',
+    description: 'Check and submit',
+    title: 'Review and submit',
+    intro: 'Check every answer. Submitting locks the application and sends it for risk review.',
+  },
 ];
 const REVIEW = STEPS.length - 1;
 
@@ -76,6 +109,8 @@ function buildForm(fb: NonNullableFormBuilder) {
     ReactiveFormsModule,
     FormFieldComponent,
     FieldControlDirective,
+    IconComponent,
+    RouterLink,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './application-wizard.component.html',
@@ -174,8 +209,14 @@ export class ApplicationWizardComponent implements CanLeave {
     this.focus('[aria-invalid="true"]');
   }
 
-  protected isComplete(key: StepKey): boolean {
-    return key !== 'review' && this.section(key).valid;
+  /** Drives the stepper: done steps get a check, visited steps with errors get a warning. */
+  protected stepState(index: number): StepState {
+    if (index === this.stepIndex()) return 'current';
+    const key = STEPS[index].key;
+    if (key === 'review') return 'upcoming';
+    const section = this.section(key);
+    if (section.valid) return 'complete';
+    return section.touched ? 'error' : 'upcoming';
   }
 
   protected retrySave(): void {

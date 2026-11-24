@@ -1,0 +1,174 @@
+.meta-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.875rem;
+  color: var(--bs-secondary-color);
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+}
+
+// Draft → Submitted → In review → Decision.
+.lifecycle {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+  padding: 1.25rem 1rem;
+  list-style: none;
+}
+
+.lifecycle-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 0.95rem;
+    left: calc(50% + 1.2rem);
+    right: calc(-50% + 1.2rem);
+    height: 2px;
+    background-color: var(--bs-border-color);
+  }
+
+  &.is-done::after {
+    background-color: var(--bs-primary);
+  }
+}
+
+.lifecycle-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--bs-border-color);
+  border-radius: 50%;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  background-color: var(--app-surface);
+
+  .is-done & {
+    border-color: var(--bs-primary);
+    color: #fff;
+    background-color: var(--bs-primary);
+  }
+
+  .is-current & {
+    border-color: var(--bs-primary);
+    color: var(--bs-primary);
+    box-shadow: 0 0 0 4px var(--bs-primary-bg-subtle);
+  }
+
+  .is-approved & {
+    border-color: var(--bs-success);
+    color: #fff;
+    background-color: var(--bs-success);
+  }
+
+  .is-rejected & {
+    border-color: var(--bs-danger);
+    color: #fff;
+    background-color: var(--bs-danger);
+  }
+}
+
+.lifecycle-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--bs-secondary-color);
+
+  .is-done &,
+  .is-current &,
+  .is-approved &,
+  .is-rejected & {
+    color: var(--bs-emphasis-color);
+  }
+}
+
+// Details on the left, review actions in a sticky column on the right (lg and up).
+.detail {
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+
+  @media (min-width: 992px) {
+    &.has-actions {
+      grid-template-columns: minmax(0, 1fr) 21rem;
+    }
+  }
+}
+
+.detail-main,
+.detail-actions {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.detail-actions {
+  @media (min-width: 992px) {
+    position: sticky;
+    top: calc(var(--app-nav-height) + 1.5rem);
+  }
+}
+
+// Risk history: newest first, joined by a line.
+.timeline {
+  display: grid;
+  gap: 1.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline-item {
+  position: relative;
+  display: flex;
+  gap: 0.875rem;
+
+  &:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    top: 2.25rem;
+    bottom: -1.25rem;
+    left: calc(1rem - 1px);
+    width: 2px;
+    background-color: var(--bs-border-color);
+  }
+}
+
+.timeline-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+}
+
+.timeline-body {
+  flex: 1;
+  min-width: 0;
+  padding-top: 0.25rem;
+}
+
+.timeline-comment {
+  margin: 0.375rem 0 0;
+  padding: 0.625rem 0.875rem;
+  border-radius: var(--bs-border-radius);
+  overflow-wrap: anywhere;
+  background-color: var(--app-surface-muted);
+}

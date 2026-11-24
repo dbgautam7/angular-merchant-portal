@@ -7,157 +7,310 @@
 
 @let state = load();
 @if (state.status === 'error') {
-  @if (state.notFound) {
-    <div class="alert alert-warning" role="alert">
-      This application doesn't exist, or you don't have access to it.
-    </div>
-  } @else {
-    <div
-      class="alert alert-danger d-flex flex-wrap justify-content-between align-items-center gap-2"
-      role="alert"
-    >
-      Could not load the application.
-      <button type="button" class="btn btn-outline-danger btn-sm" (click)="retry()">Retry</button>
-    </div>
-  }
-} @else if (app(); as a) {
-  <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
-    <h1 class="h3 mb-0 me-1">{{ a.business.legalName || '(untitled draft)' }}</h1>
-    <app-status-badge [status]="a.status" />
-    @if (can().edit) {
-      <a
-        class="btn btn-sm btn-outline-primary ms-auto"
-        [routerLink]="['/applications', a.id, 'edit']"
-        >Continue editing</a
-      >
+  <div class="card">
+    @if (state.notFound) {
+      <div class="empty-state" role="alert">
+        <span class="empty-state-icon"><app-icon name="lock" /></span>
+        <h1 class="h6 mb-0">Application not available</h1>
+        <p>This application doesn't exist, or you don't have access to it.</p>
+        <a class="btn btn-outline-primary btn-sm mt-2" routerLink="/applications">
+          <app-icon name="arrowLeft" /> Back to applications
+        </a>
+      </div>
+    } @else {
+      <div class="empty-state" role="alert">
+        <span class="empty-state-icon text-danger"><app-icon name="alert" /></span>
+        <h1 class="h6 mb-0">Could not load the application.</h1>
+        <p>Check your connection and try again.</p>
+        <button type="button" class="btn btn-outline-primary btn-sm mt-2" (click)="retry()">
+          <app-icon name="refresh" /> Retry
+        </button>
+      </div>
     }
   </div>
-  <p class="small text-body-secondary mb-4">
-    Updated {{ a.updatedAt | date: 'medium' }}
-    @if (can().seeReviewer) {
-      · Reviewer: {{ reviewerName() }}
+} @else if (app(); as a) {
+  <header class="page-header">
+    <div>
+      <div class="d-flex flex-wrap align-items-center gap-2">
+        <h1 class="page-title">{{ a.business.legalName || '(untitled draft)' }}</h1>
+        <app-status-badge [status]="a.status" />
+      </div>
+      <ul class="meta-list">
+        <li>
+          <app-icon name="file" /> <span class="font-monospace">{{ a.id }}</span>
+        </li>
+        <li><app-icon name="clock" /> Updated {{ a.updatedAt | date: 'MMM d, y, h:mm a' }}</li>
+        @if (can().seeReviewer) {
+          <li><app-icon name="user" /> Reviewer: {{ reviewerName() }}</li>
+        }
+      </ul>
+    </div>
+    @if (can().edit) {
+      <a class="btn btn-primary" [routerLink]="['/applications', a.id, 'edit']">
+        <app-icon name="pencil" /> Continue editing
+      </a>
     }
-  </p>
+  </header>
+
+  <div class="card mb-4">
+    <ol class="lifecycle" aria-label="Application progress">
+      @for (step of lifecycle(); track $index) {
+        <li
+          class="lifecycle-step"
+          [class]="'is-' + step.state"
+          [attr.aria-current]="step.state === 'current' ? 'step' : null"
+        >
+          <span class="lifecycle-marker" aria-hidden="true">
+            @switch (step.state) {
+              @case ('rejected') {
+                <app-icon name="x" [strokeWidth]="3" />
+              }
+              @case ('upcoming') {
+                {{ $index + 1 }}
+              }
+              @case ('current') {
+                {{ $index + 1 }}
+              }
+              @default {
+                <app-icon name="check" [strokeWidth]="3" />
+              }
+            }
+          </span>
+          <span class="lifecycle-label">{{ step.label }}</span>
+          @if (step.state === 'done') {
+            <span class="visually-hidden">(done)</span>
+          }
+        </li>
+      }
+    </ol>
+  </div>
 
   @if (notice(); as message) {
-    <div id="action-notice" class="alert alert-success" role="status" tabindex="-1">
-      {{ message }}
+    <div
+      id="action-notice"
+      class="alert alert-success d-flex align-items-center gap-2"
+      role="status"
+      tabindex="-1"
+    >
+      <app-icon name="checkCircle" /> {{ message }}
     </div>
   }
   @if (actionError(); as message) {
-    <div class="alert alert-danger" role="alert">{{ message }}</div>
+    <div class="alert alert-danger d-flex align-items-center gap-2" role="alert">
+      <app-icon name="alert" /> {{ message }}
+    </div>
   }
 
   @let hasActions = can().assign || can().decide;
-  <div class="row g-4">
-    <div [class]="hasActions ? 'col-lg-8' : 'col-12'">
-      <section class="card mb-4" aria-labelledby="business-heading">
-        <h2 id="business-heading" class="card-header h6">Business</h2>
-        <dl class="card-body row mb-0">
-          <dt class="col-sm-4">Registration number</dt>
-          <dd class="col-sm-8">{{ a.business.registrationNumber || '—' }}</dd>
-          <dt class="col-sm-4">Category</dt>
-          <dd class="col-sm-8">{{ (a.business.category | categoryLabel) || '—' }}</dd>
-          <dt class="col-sm-4">Website</dt>
-          <dd class="col-sm-8 text-break">
-            @if (a.business.website) {
-              <!-- Angular sanitizes bound URLs, so a javascript: value would never run. -->
-              <a [href]="a.business.website" target="_blank" rel="noopener noreferrer">{{
-                a.business.website
-              }}</a>
-            } @else {
-              —
-            }
-          </dd>
-        </dl>
+  <div class="detail" [class.has-actions]="hasActions">
+    <div class="detail-main">
+      <section class="card" aria-labelledby="business-heading">
+        <div class="card-header">
+          <h2 id="business-heading" class="section-title">
+            <span class="icon-tile"><app-icon name="building" /></span> Business
+          </h2>
+        </div>
+        <div class="card-body">
+          <dl class="dl-grid">
+            <div>
+              <dt>Registration number</dt>
+              <dd class="font-monospace">{{ a.business.registrationNumber || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{{ (a.business.category | categoryLabel) || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Website</dt>
+              <dd>
+                @if (a.business.website) {
+                  <!-- Angular sanitizes bound URLs, so a javascript: value would never run. -->
+                  <a
+                    class="icon-link"
+                    [href]="a.business.website"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    >{{ a.business.website
+                    }}<span class="visually-hidden"> (opens in a new tab)</span></a
+                  >
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+          </dl>
+        </div>
       </section>
 
-      <section class="card mb-4" aria-labelledby="owner-heading">
-        <h2 id="owner-heading" class="card-header h6">Owner</h2>
-        <dl class="card-body row mb-0">
-          <dt class="col-sm-4">Full name</dt>
-          <dd class="col-sm-8">{{ a.owner.fullName || '—' }}</dd>
-          <dt class="col-sm-4">Email</dt>
-          <dd class="col-sm-8 text-break">{{ a.owner.email || '—' }}</dd>
-          <dt class="col-sm-4">Date of birth</dt>
-          <dd class="col-sm-8">{{ (a.owner.dateOfBirth | date: 'mediumDate') || '—' }}</dd>
-          <dt class="col-sm-4">Tax ID</dt>
-          <dd class="col-sm-8">
-            @if (a.owner.taxId) {
-              <app-sensitive-value
-                [appId]="a.id"
-                field="taxId"
-                [value]="a.owner.taxId"
-                label="tax ID"
-                [canReveal]="can().reveal"
-              />
-            } @else {
-              —
-            }
-          </dd>
-        </dl>
+      <section class="card" aria-labelledby="owner-heading">
+        <div class="card-header">
+          <h2 id="owner-heading" class="section-title">
+            <span class="icon-tile"><app-icon name="user" /></span> Owner
+          </h2>
+        </div>
+        <div class="card-body">
+          <dl class="dl-grid">
+            <div>
+              <dt>Full name</dt>
+              <dd>{{ a.owner.fullName || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Email</dt>
+              <dd>{{ a.owner.email || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Date of birth</dt>
+              <dd>{{ (a.owner.dateOfBirth | date: 'mediumDate') || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Tax ID</dt>
+              <dd>
+                @if (a.owner.taxId) {
+                  <app-sensitive-value
+                    [appId]="a.id"
+                    field="taxId"
+                    [value]="a.owner.taxId"
+                    label="tax ID"
+                    [canReveal]="can().reveal"
+                  />
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+          </dl>
+        </div>
       </section>
 
-      <section class="card mb-4" aria-labelledby="banking-heading">
-        <h2 id="banking-heading" class="card-header h6">Banking</h2>
-        <dl class="card-body row mb-0">
-          <dt class="col-sm-4">Bank name</dt>
-          <dd class="col-sm-8">{{ a.banking.bankName || '—' }}</dd>
-          <dt class="col-sm-4">Account number</dt>
-          <dd class="col-sm-8">
-            @if (a.banking.accountNumber) {
-              <app-sensitive-value
-                [appId]="a.id"
-                field="accountNumber"
-                [value]="a.banking.accountNumber"
-                label="account number"
-                [canReveal]="can().reveal"
-              />
-            } @else {
-              —
-            }
-          </dd>
-          <dt class="col-sm-4">Monthly volume</dt>
-          <dd class="col-sm-8">
-            @if (a.banking.monthlyVolume !== null) {
-              USD {{ a.banking.monthlyVolume | number: '1.0-0' }}
-            } @else {
-              —
-            }
-          </dd>
-        </dl>
+      <section class="card" aria-labelledby="banking-heading">
+        <div class="card-header">
+          <h2 id="banking-heading" class="section-title">
+            <span class="icon-tile"><app-icon name="bank" /></span> Banking
+          </h2>
+        </div>
+        <div class="card-body">
+          <dl class="dl-grid">
+            <div>
+              <dt>Bank name</dt>
+              <dd>{{ a.banking.bankName || '—' }}</dd>
+            </div>
+            <div>
+              <dt>Account number</dt>
+              <dd>
+                @if (a.banking.accountNumber) {
+                  <app-sensitive-value
+                    [appId]="a.id"
+                    field="accountNumber"
+                    [value]="a.banking.accountNumber"
+                    label="account number"
+                    [canReveal]="can().reveal"
+                  />
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>Monthly volume</dt>
+              <dd>
+                @if (a.banking.monthlyVolume !== null) {
+                  USD {{ a.banking.monthlyVolume | number: '1.0-0' }}
+                } @else {
+                  —
+                }
+              </dd>
+            </div>
+          </dl>
+        </div>
       </section>
 
       <section class="card" aria-labelledby="history-heading">
-        <h2 id="history-heading" class="card-header h6">Risk history</h2>
-        <ol class="list-group list-group-flush">
-          @for (event of history(); track $index) {
-            @let badge = eventBadges[event.decision];
-            <li class="list-group-item">
-              <div class="d-flex flex-wrap justify-content-between gap-2">
-                <span>
-                  <span class="badge" [class]="badge.css">{{ badge.label }}</span>
-                  by {{ event.by }}
+        <div class="card-header">
+          <h2 id="history-heading" class="section-title">
+            <span class="icon-tile"><app-icon name="shield" /></span> Risk history
+          </h2>
+        </div>
+        <div class="card-body">
+          <ol class="timeline">
+            @for (event of history(); track $index) {
+              @let style = eventStyles[event.decision];
+              <li class="timeline-item">
+                <span
+                  class="timeline-marker"
+                  [class]="'text-' + style.tone + '-emphasis bg-' + style.tone + '-subtle'"
+                  aria-hidden="true"
+                >
+                  <app-icon [name]="style.icon" />
                 </span>
-                <time class="small text-body-secondary" [attr.datetime]="event.at">{{
-                  event.at | date: 'medium'
-                }}</time>
-              </div>
-              <p class="mb-0 mt-1 text-break">{{ event.comment }}</p>
-            </li>
-          } @empty {
-            <li class="list-group-item text-body-secondary">No risk decisions yet.</li>
-          }
-        </ol>
+                <div class="timeline-body">
+                  <div class="d-flex flex-wrap justify-content-between gap-1">
+                    <span>
+                      <strong class="text-body-emphasis">{{ style.label }}</strong> by
+                      {{ event.by }}
+                    </span>
+                    <time class="small text-body-secondary" [attr.datetime]="event.at">{{
+                      event.at | date: 'MMM d, y, h:mm a'
+                    }}</time>
+                  </div>
+                  <p class="timeline-comment">{{ event.comment }}</p>
+                </div>
+              </li>
+            } @empty {
+              <li class="text-body-secondary">No risk decisions yet.</li>
+            }
+          </ol>
+        </div>
       </section>
     </div>
 
     @if (hasActions) {
-      <aside class="col-lg-4" aria-label="Review actions">
+      <aside class="detail-actions" aria-label="Review actions">
+        @if (can().decide) {
+          <section class="card" aria-labelledby="decision-heading">
+            <div class="card-header">
+              <h2 id="decision-heading" class="section-title">
+                <span class="icon-tile"><app-icon name="shield" /></span> Risk decision
+              </h2>
+            </div>
+            <form class="card-body" [formGroup]="decisionForm" novalidate>
+              <app-form-field label="Comment" hint="Saved to the risk history with your name.">
+                <textarea
+                  appFieldControl
+                  formControlName="comment"
+                  class="form-control"
+                  rows="4"
+                ></textarea>
+              </app-form-field>
+              <div class="d-grid gap-2 mt-3">
+                <button
+                  type="button"
+                  class="btn btn-success"
+                  [disabled]="busy()"
+                  (click)="decide('APPROVED')"
+                >
+                  <app-icon name="check" /> Approve
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-outline-danger"
+                  [disabled]="busy()"
+                  (click)="decide('REJECTED')"
+                >
+                  <app-icon name="x" /> Reject
+                </button>
+              </div>
+            </form>
+          </section>
+        }
+
         @if (can().assign) {
-          <section class="card mb-4" aria-labelledby="assign-heading">
+          <section class="card" aria-labelledby="assign-heading">
+            <div class="card-header">
+              <h2 id="assign-heading" class="section-title">
+                <span class="icon-tile"><app-icon name="userPlus" /></span> Assignment
+              </h2>
+            </div>
             <div class="card-body">
-              <h2 id="assign-heading" class="h6">Assignment</h2>
               @if (reviewers(); as list) {
                 <app-form-field label="Reviewer" [hint]="'Currently: ' + reviewerName()">
                   <select appFieldControl class="form-select" [formControl]="reviewerControl">
@@ -183,47 +336,22 @@
             </div>
           </section>
         }
-
-        @if (can().decide) {
-          <section class="card" aria-labelledby="decision-heading">
-            <form class="card-body" [formGroup]="decisionForm" novalidate>
-              <h2 id="decision-heading" class="h6">Risk decision</h2>
-              <app-form-field label="Comment" hint="Saved to the risk history with your name.">
-                <textarea
-                  appFieldControl
-                  formControlName="comment"
-                  class="form-control"
-                  rows="3"
-                ></textarea>
-              </app-form-field>
-              <div class="d-flex gap-2 mt-3">
-                <button
-                  type="button"
-                  class="btn btn-success flex-fill"
-                  [disabled]="busy()"
-                  (click)="decide('APPROVED')"
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-danger flex-fill"
-                  [disabled]="busy()"
-                  (click)="decide('REJECTED')"
-                >
-                  Reject
-                </button>
-              </div>
-            </form>
-          </section>
-        }
       </aside>
     }
   </div>
 } @else {
-  <div class="text-center py-5">
-    <div class="spinner-border" role="status">
-      <span class="visually-hidden">Loading application…</span>
+  <div class="placeholder-glow" aria-hidden="true">
+    <span class="placeholder col-6 col-md-4 placeholder-lg mb-3"></span>
+    <div class="card mb-4">
+      <div class="card-body"><span class="placeholder col-12"></span></div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <span class="placeholder col-4 mb-3"></span>
+        <span class="placeholder col-12 mb-2"></span>
+        <span class="placeholder col-10"></span>
+      </div>
     </div>
   </div>
+  <p class="visually-hidden" role="status">Loading application…</p>
 }

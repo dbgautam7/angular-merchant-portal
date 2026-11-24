@@ -1,7 +1,4 @@
-// Bootstrap 5 is loaded globally via angular.json; app-level SCSS overrides live here.
-$focus: #0d6efd;
-
-:focus-visible {
-  outline: 3px solid rgba($focus, 0.5);
-  outline-offset: 2px;
-}
+// Global styles: Bootstrap 5 built from Sass with the app theme, then the app-wide patterns.
+// Component-specific styles live next to each component.
+@import 'styles/bootstrap';
+@import 'styles/app';

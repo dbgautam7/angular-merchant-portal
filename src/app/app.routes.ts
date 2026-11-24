@@ -22,6 +22,7 @@ export const wizardMatcher: UrlMatcher = (segments) => {
 export const routes: Routes = [
   {
     path: 'login',
+    title: 'Sign in',
     loadComponent: () => import('./features/login/login.component').then((m) => m.LoginComponent),
   },
   {
@@ -30,12 +31,14 @@ export const routes: Routes = [
     children: [
       {
         path: '',
+        title: 'Applications',
         loadComponent: () =>
           import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
       },
       {
         // Declared before ':id', so /applications/new is never read as an id.
         matcher: wizardMatcher,
+        title: 'Application form',
         canActivate: [roleGuard('SALES')],
         // Saves pending changes before the user leaves the wizard.
         canDeactivate: [unsavedChangesGuard],
@@ -46,6 +49,7 @@ export const routes: Routes = [
       },
       {
         path: ':id',
+        title: 'Application details',
         loadComponent: () =>
           import('./features/detail/application-detail.component').then(
             (m) => m.ApplicationDetailComponent,

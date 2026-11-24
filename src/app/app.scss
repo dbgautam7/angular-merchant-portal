@@ -1,0 +1,108 @@
+.skip-link:focus {
+  position: fixed;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 1030;
+  padding: 0.5rem 1rem;
+  border-radius: var(--bs-border-radius);
+  color: #fff;
+  background-color: var(--bs-primary);
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+  border-bottom: 1px solid var(--bs-border-color);
+  background-color: color-mix(in srgb, var(--app-surface) 88%, transparent);
+  backdrop-filter: saturate(1.5) blur(10px);
+}
+
+.navbar {
+  min-height: var(--app-nav-height);
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--bs-emphasis-color);
+}
+
+.brand-mark {
+  display: inline-flex;
+  padding: 0.375rem;
+  border-radius: 0.625rem;
+  font-size: 1rem;
+  color: #fff;
+  background: linear-gradient(135deg, var(--bs-primary), #7c3aed);
+}
+
+.navbar-toggler {
+  padding: 0.375rem;
+  line-height: 1;
+  border: 1px solid var(--bs-border-color);
+  font-size: 1.25rem;
+  color: var(--bs-emphasis-color);
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: var(--bs-border-radius);
+  font-weight: 500;
+  color: var(--bs-secondary-color);
+
+  &:hover {
+    color: var(--bs-emphasis-color);
+    text-decoration: none;
+  }
+
+  &.active {
+    color: var(--bs-primary-text-emphasis);
+    background-color: var(--bs-primary-bg-subtle);
+  }
+}
+
+.navbar-nav {
+  gap: 0.25rem;
+  margin-left: 1rem;
+}
+
+.navbar-user {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.navbar-user-name {
+  line-height: 1.25;
+}
+
+// Phones: the menu opens below the bar, links stacked, user row at the bottom.
+@media (max-width: 767.98px) {
+  .navbar-collapse.show {
+    padding: 0.75rem 0 0.5rem;
+  }
+
+  .navbar-nav {
+    margin: 0 0 0.75rem;
+  }
+
+  .navbar-user {
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--bs-border-color);
+
+    .btn {
+      margin-left: auto;
+    }
+  }
+}
+
+#main:focus {
+  outline: none; // focused by the skip link, not by the keyboard
+}

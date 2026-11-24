@@ -1,28 +1,225 @@
-.wizard-steps {
-  list-style: none;
-  padding-left: 0;
-  flex-wrap: wrap;
-  gap: 0.25rem;
+// Steps above the form on small screens, beside it from lg.
+.wizard {
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
 
-  // Stacked on phones, so long step names never squeeze.
-  @media (max-width: 575.98px) {
-    flex-direction: column;
+  @media (min-width: 992px) {
+    grid-template-columns: 17rem minmax(0, 1fr);
   }
+}
+
+.wizard-steps {
+  padding: 1rem;
+
+  @media (min-width: 992px) {
+    position: sticky;
+    top: calc(var(--app-nav-height) + 1.5rem);
+    padding: 1.25rem 1rem;
+  }
+}
+
+// Stepper: a row of numbered markers joined by a line; a vertical list from lg.
+.stepper {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  @media (min-width: 992px) {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+.stepper-item {
+  position: relative;
+
+  // Connector to the next step.
+  &:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 1.1rem;
+    left: calc(50% + 1.25rem);
+    right: calc(-50% + 1.25rem);
+    height: 2px;
+    background-color: var(--bs-border-color);
+
+    @media (min-width: 992px) {
+      top: 2.6rem;
+      bottom: -0.6rem;
+      left: 1.6rem;
+      right: auto;
+      width: 2px;
+      height: auto;
+    }
+  }
+
+  &.is-complete::after {
+    background-color: var(--bs-primary);
+  }
+}
+
+.stepper-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  padding: 0.25rem;
+  border: 0;
+  border-radius: var(--bs-border-radius);
+  text-align: center;
+  color: inherit;
+  background: none;
+
+  &:hover:not(:disabled) .stepper-label {
+    color: var(--bs-primary);
+  }
+
+  @media (min-width: 992px) {
+    flex-direction: row;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    text-align: left;
+
+    .is-current & {
+      background-color: var(--bs-primary-bg-subtle);
+    }
+  }
+}
+
+.stepper-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 2px solid var(--bs-border-color);
+  border-radius: 50%;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  background-color: var(--app-surface);
+
+  .is-current & {
+    border-color: var(--bs-primary);
+    color: var(--bs-primary);
+    box-shadow: 0 0 0 4px var(--bs-primary-bg-subtle);
+  }
+
+  .is-complete & {
+    border-color: var(--bs-primary);
+    color: #fff;
+    background-color: var(--bs-primary);
+  }
+
+  .is-error & {
+    border-color: var(--bs-danger);
+    color: var(--bs-danger);
+  }
+}
+
+.stepper-text {
+  display: grid;
+  min-width: 0;
+}
+
+.stepper-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+
+  .is-current &,
+  .is-complete & {
+    color: var(--bs-emphasis-color);
+  }
+
+  .is-error & {
+    color: var(--bs-danger-text-emphasis);
+  }
+
+  @media (min-width: 992px) {
+    font-size: 0.9375rem;
+  }
+}
+
+.stepper-description {
+  display: none;
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+
+  @media (min-width: 992px) {
+    display: block;
+  }
+}
+
+.wizard-form-header {
+  padding: 1.25rem;
+}
+
+.wizard-step-count {
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-primary-text-emphasis);
 }
 
 #step-heading:focus {
   outline: none; // focused by script for screen readers, not by the keyboard
 }
 
-.review-list {
-  dt {
-    font-weight: 500;
-    color: var(--bs-secondary-color);
-    font-size: 0.875rem;
-  }
+// Actions stay reachable at the bottom of the screen on long forms.
+.wizard-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  background-color: var(--app-surface);
+}
 
-  dd {
-    margin-bottom: 0.5rem;
-    overflow-wrap: anywhere;
-  }
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 50rem;
+  font-size: 0.8125rem;
+  color: var(--bs-secondary-color);
+  background-color: var(--app-surface);
+}
+
+.save-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background-color: var(--bs-warning);
+}
+
+.review {
+  display: grid;
+  gap: 1rem;
+}
+
+.review-section {
+  padding: 1rem 1.25rem 1.25rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--bs-border-radius-lg);
+}
+
+.review-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
 }

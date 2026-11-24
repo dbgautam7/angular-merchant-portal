@@ -31,7 +31,8 @@ import { CategoryLabelPipe } from '../../shared/categories';
 import { injectFocus } from '../../shared/focus';
 import { FieldControlDirective, FormFieldComponent } from '../../shared/form-field';
 import { SensitiveValueComponent } from '../../shared/sensitive-value.component';
-import { StatusBadgeComponent } from '../../shared/status-badge.component';
+import { IconComponent, IconName } from '../../shared/icon.component';
+import { STATUS_LABELS, StatusBadgeComponent } from '../../shared/status-badge.component';
 import { notBlank } from '../../shared/validators';
 
 type Decision = 'APPROVED' | 'REJECTED';
@@ -41,10 +42,22 @@ type LoadState =
   | { status: 'ready'; app: MerchantApplication }
   | { status: 'error'; notFound: boolean };
 
-const EVENT_BADGES: Record<RiskEvent['decision'], { label: string; css: string }> = {
-  APPROVED: { label: 'Approved', css: 'text-bg-success' },
-  REJECTED: { label: 'Rejected', css: 'text-bg-danger' },
-  NOTE: { label: 'Note', css: 'text-bg-secondary' },
+const EVENT_STYLES: Record<RiskEvent['decision'], { label: string; icon: IconName; tone: string }> =
+  {
+    APPROVED: { label: 'Approved', icon: 'checkCircle', tone: 'success' },
+    REJECTED: { label: 'Rejected', icon: 'xCircle', tone: 'danger' },
+    NOTE: { label: 'Note', icon: 'message', tone: 'secondary' },
+  };
+
+type LifecycleState = 'done' | 'current' | 'upcoming' | 'approved' | 'rejected';
+
+/** Where each status sits on the Draft → Submitted → In review → Decision track. */
+const LIFECYCLE_INDEX: Record<MerchantApplication['status'], number> = {
+  DRAFT: 0,
+  SUBMITTED: 1,
+  IN_REVIEW: 2,
+  APPROVED: 3,
+  REJECTED: 3,
 };
 
 const isStatus = (error: unknown, ...codes: number[]) =>
@@ -60,11 +73,13 @@ const isStatus = (error: unknown, ...codes: number[]) =>
     RouterLink,
     FormFieldComponent,
     FieldControlDirective,
+    IconComponent,
     SensitiveValueComponent,
     StatusBadgeComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './application-detail.component.html',
+  styleUrl: './application-detail.component.scss',
 })
 export class ApplicationDetailComponent {
   private readonly api = inject(ApplicationApi);
@@ -106,7 +121,25 @@ export class ApplicationDetailComponent {
 
   /** Newest first. */
   protected readonly history = computed(() => [...(this.app()?.riskHistory ?? [])].reverse());
-  protected readonly eventBadges = EVENT_BADGES;
+  protected readonly eventStyles = EVENT_STYLES;
+
+  /** The application's progress, for the tracker at the top of the page. */
+  protected readonly lifecycle = computed(() => {
+    const status = this.app()?.status ?? 'DRAFT';
+    const at = LIFECYCLE_INDEX[status];
+    const decided = status === 'APPROVED' || status === 'REJECTED';
+    const labels = [
+      'Draft',
+      'Submitted',
+      'In review',
+      decided ? STATUS_LABELS[status] : 'Decision',
+    ];
+    return labels.map((label, i) => {
+      let state: LifecycleState = i < at ? 'done' : i === at ? 'current' : 'upcoming';
+      if (decided && i === 3) state = status === 'APPROVED' ? 'approved' : 'rejected';
+      return { label, state };
+    });
+  });
 
   /**
    * Who sees which control, in one place so the policy is easy to review. UX only: the API

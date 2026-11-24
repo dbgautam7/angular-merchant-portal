@@ -18,6 +18,7 @@ import { ApplicationApi } from '../../core/api/application.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ApplicationQuery, ApplicationStatus, MerchantApplication, Page } from '../../core/models';
 import { CategoryLabelPipe } from '../../shared/categories';
+import { IconComponent } from '../../shared/icon.component';
 import { STATUS_LABELS, StatusBadgeComponent } from '../../shared/status-badge.component';
 
 export const PAGE_SIZE = 10;
@@ -33,6 +34,15 @@ const toStatus = (value: unknown): ApplicationStatus | '' =>
     ? (value as ApplicationStatus)
     : '';
 const toText = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+/** The first, last, current and neighbouring pages, with null where pages are skipped. */
+export function pageList(current: number, total: number): (number | null)[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const shown = [1, current - 1, current, current + 1, total]
+    .filter((p, i, all) => p >= 1 && p <= total && all.indexOf(p) === i)
+    .sort((a, b) => a - b);
+  return shown.flatMap((p, i) => (i > 0 && p - shown[i - 1] > 1 ? [null, p] : [p]));
+}
 
 interface ListState {
   /** Rows for the current filters. Kept on screen (dimmed) while the next page loads. */
@@ -59,7 +69,7 @@ function reduce(state: ListState, event: ListEvent): ListState {
 
 @Component({
   selector: 'app-dashboard',
-  imports: [CategoryLabelPipe, DatePipe, RouterLink, StatusBadgeComponent],
+  imports: [CategoryLabelPipe, DatePipe, IconComponent, RouterLink, StatusBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',
@@ -76,11 +86,14 @@ export class DashboardComponent {
   readonly status = input<ApplicationStatus | '', unknown>('', { transform: toStatus });
   readonly q = input('', { transform: toText });
 
-  protected readonly statusOptions = Object.entries(STATUS_LABELS).map(([value, label]) => ({
-    value,
-    label,
-  }));
   protected readonly canCreate = computed(() => this.auth.hasRole('SALES'));
+  protected readonly subtitle = computed(() =>
+    this.auth.hasRole('SALES')
+      ? 'Merchant applications you have created.'
+      : this.auth.hasRole('REVIEWER')
+        ? 'Applications assigned to you for review.'
+        : 'Every merchant application, across all teams.',
+  );
   protected readonly hasFilters = computed(() => this.status() !== '' || this.term() !== '');
 
   /** Trimmed search term; as a computed it only changes when the trimmed text does. */
@@ -94,6 +107,27 @@ export class DashboardComponent {
 
   private readonly retry$ = new Subject<void>();
   private readonly search$ = new Subject<string>();
+
+  /** Counts per status for the search term; null while loading or if it failed (tabs still work). */
+  private readonly summary = toSignal(
+    toObservable(this.term).pipe(
+      switchMap((q) => this.api.summary(q).pipe(catchError(() => of(null)))),
+    ),
+    { initialValue: null },
+  );
+
+  /** Status filters as links, so each view has its own URL. */
+  protected readonly tabs = computed(() => {
+    const summary = this.summary();
+    return [
+      { value: '', label: 'All', count: summary?.total ?? null },
+      ...Object.entries(STATUS_LABELS).map(([value, label]) => ({
+        value,
+        label,
+        count: summary?.byStatus[value as ApplicationStatus] ?? null,
+      })),
+    ];
+  });
 
   /**
    * query (or Retry) -> request. switchMap cancels a stale request when the filters change,
@@ -118,6 +152,17 @@ export class DashboardComponent {
     return page ? Math.max(1, Math.ceil(page.total / page.size)) : 1;
   });
 
+  /** "Showing 11–20 of 42". */
+  protected readonly range = computed(() => {
+    const page = this.state().page;
+    if (!page || page.total === 0) return null;
+    const from = (page.page - 1) * page.size + 1;
+    return { from, to: Math.min(page.page * page.size, page.total), total: page.total };
+  });
+
+  /** Page numbers to show, with null for a gap: 1 … 4 5 6 … 12. */
+  protected readonly pageItems = computed(() => pageList(this.page(), this.totalPages()));
+
   /** Read out by a polite live region, so screen-reader users hear when results change. */
   protected readonly announcement = computed(() => {
     const { page, loading } = this.state();
@@ -138,10 +183,6 @@ export class DashboardComponent {
 
   protected onSearch(text: string): void {
     this.search$.next(text);
-  }
-
-  protected setStatus(value: string): void {
-    this.navigate({ status: toStatus(value) || null, page: null });
   }
 
   protected goTo(page: number): void {
