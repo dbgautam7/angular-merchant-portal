@@ -1,6 +1,10 @@
 import { Routes } from '@angular/router';
+import { authGuard, roleGuard } from './core/auth/guards';
 
-/** Every feature page is lazy-loaded with loadComponent, so each one ships as its own chunk. */
+/**
+ * Every feature page is lazy-loaded with loadComponent, so each one ships as its own chunk.
+ * Guards run before a chunk is fetched, so a blocked user never downloads the page.
+ */
 export const routes: Routes = [
   {
     path: 'login',
@@ -8,6 +12,7 @@ export const routes: Routes = [
   },
   {
     path: 'applications',
+    canActivate: [authGuard],
     children: [
       {
         path: '',
@@ -16,6 +21,7 @@ export const routes: Routes = [
       },
       {
         path: 'new',
+        canActivate: [roleGuard('SALES')],
         loadComponent: () =>
           import('./features/application/application-wizard.component').then(
             (m) => m.ApplicationWizardComponent,
@@ -23,6 +29,7 @@ export const routes: Routes = [
       },
       {
         path: ':id/edit',
+        canActivate: [roleGuard('SALES')],
         loadComponent: () =>
           import('./features/application/application-wizard.component').then(
             (m) => m.ApplicationWizardComponent,
