@@ -2,6 +2,7 @@ import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { finalize, map, Observable, shareReplay, tap } from 'rxjs';
+import { API_BASE_URL } from '../config';
 import { AuthResponse, Role, User } from '../models';
 
 /**
@@ -13,6 +14,7 @@ import { AuthResponse, Role, User } from '../models';
 export class AuthService {
   private readonly http = inject(HttpClient);
   private readonly router = inject(Router);
+  private readonly apiBase = inject(API_BASE_URL);
 
   private readonly _user = signal<User | null>(null);
   private accessToken: string | null = null;
@@ -35,7 +37,7 @@ export class AuthService {
   }
 
   login(username: string): Observable<User> {
-    return this.http.post<AuthResponse>('/api/auth/login', { username }).pipe(
+    return this.http.post<AuthResponse>(`${this.apiBase}/auth/login`, { username }).pipe(
       tap((res) => this.setSession(res)),
       map((res) => res.user),
     );
@@ -48,7 +50,7 @@ export class AuthService {
    */
   refresh(): Observable<string> {
     this.refresh$ ??= this.http
-      .post<AuthResponse>('/api/auth/refresh', { refreshToken: this.refreshToken })
+      .post<AuthResponse>(`${this.apiBase}/auth/refresh`, { refreshToken: this.refreshToken })
       .pipe(
         tap({ next: (res) => this.setSession(res), error: () => this.logout() }),
         map((res) => res.accessToken),

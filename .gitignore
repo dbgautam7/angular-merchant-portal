@@ -8,8 +8,27 @@
 
 # Node
 /node_modules
-npm-debug.log
-yarn-error.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Secrets and local environment: never commit these. A browser app cannot keep secrets
+# (src/environments is public config); real secrets belong on the server or in CI secrets.
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.keystore
+secrets/
+credentials*.json
+service-account*.json
 
 # IDEs and editors
 .idea/
@@ -28,8 +47,14 @@ yarn-error.log
 !.vscode/extensions.json
 .history/*
 
+# Local tool settings (AI assistants, personal overrides)
+.claude/settings.local.json
+.claude/*.local.*
+
 # Miscellaneous
 /.angular/cache
+/.vite
+/.vite-node
 .sass-cache/
 /connect.lock
 /coverage
@@ -38,6 +63,12 @@ testem.log
 /typings
 __screenshots__/
 
+# Editor swap files
+*.swp
+*.swo
+*~
+
 # System files
 .DS_Store
 Thumbs.db
+Desktop.ini

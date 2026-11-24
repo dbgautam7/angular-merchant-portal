@@ -10,6 +10,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { ApplicationApi } from '../api/application.api';
+import { API_BASE_URL } from '../config';
 import {
   expireAllAccessTokens,
   mockApiInterceptor,
@@ -179,5 +180,46 @@ describe('authInterceptor with the mock backend', () => {
     expect(sent.filter((s) => s === 'POST /api/auth/refresh')).toHaveLength(1);
     expect(sent.filter((s) => s === 'GET /api/applications')).toHaveLength(6); // 3 sent + 3 retries
     expect(pages.sort()).toEqual([1, 2, 3]);
+  });
+});
+
+describe('authInterceptor with a configured API base URL', () => {
+  const BASE = 'https://api.example.test/v1';
+  let http: HttpClient;
+  let ctrl: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([]),
+        provideHttpClient(withInterceptors([authInterceptor])),
+        provideHttpClientTesting(),
+        { provide: API_BASE_URL, useValue: BASE },
+      ],
+    });
+    http = TestBed.inject(HttpClient);
+    ctrl = TestBed.inject(HttpTestingController);
+    TestBed.inject(AuthService).login('u-sales-1').subscribe();
+    ctrl.expectOne(`${BASE}/auth/login`).flush(session('old', 'rt-1')); // auth uses the base too
+  });
+
+  afterEach(() => ctrl.verify());
+
+  it('sends the token only under the configured base, never to look-alike hosts', () => {
+    TestBed.inject(ApplicationApi).reviewers().subscribe();
+    const ours = ctrl.expectOne(`${BASE}/users/reviewers`);
+    expect(ours.request.headers.get('Authorization')).toBe('Bearer old');
+    ours.flush([]);
+
+    for (const url of [
+      '/api/applications', // no longer our API
+      'https://api.example.test.evil.test/v1/applications',
+      'https://api.example.test/v1evil/applications',
+    ]) {
+      http.get(url).subscribe();
+      const req = ctrl.expectOne(url);
+      expect(req.request.headers.has('Authorization')).toBe(false);
+      req.flush({});
+    }
   });
 });

@@ -56,6 +56,7 @@ src/app/
   shared/         reusable UI and logic: icons, status badge, form field, sensitive value, validators,
                   auto-save, masking, roles and category labels, focus helper, unsaved-changes guard
   features/       one folder per lazy route: login, dashboard, application (wizard), detail
+src/environments/ public build-time config: API base URL, mock on/off (never secrets)
 ```
 
 Dependencies flow one way: `features → shared → core`. `core` never imports from features.
@@ -175,11 +176,20 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 - **Accessibility** carried through the redesign: one `h1` per page, labelled landmarks, `aria-current` on the active nav link, filter tab, page number and step, visually hidden text wherever an icon carries meaning, and visible focus rings. Motion respects `prefers-reduced-motion`. The skip link moves focus to the page content directly: a plain `href="#main"` resolves against `<base href="/">` to `/#main` and would reload the app at the root (a bug since stage 1, fixed here).
 - **Checked visually.** Every page was screenshotted in headless Chromium at 1280 px and 390 px, in light and dark mode, with no CSP violations or console errors.
 
+## Configuration & secrets
+
+- **There are no secrets in this repository, by design.** Demo users have no passwords, and access and refresh tokens are issued at runtime by the mock server. The repository was scanned for keys, tokens and credential files.
+- **A browser app can't keep a secret.** Anything in `src/environments/environment.ts` is compiled into the JavaScript every visitor downloads and is visible in developer tools, so the file holds public settings only, and its header says so. Real secrets (API keys, signing keys, database passwords) belong on the server, or in the CI provider's secret store.
+- **Settings** (`src/environments/environment.ts`):
+  - `apiBaseUrl` (default `/api`): where the backend lives. It reaches the code through the `API_BASE_URL` injection token (`core/config.ts`), which the API client, the auth service and the interceptor all use. The interceptor sends the bearer token only to URLs under this base; the trailing `/` in the check stops a look-alike host such as `api.example.com.evil.test` from matching. A different origin would also need adding to the CSP's `connect-src`.
+  - `useMockApi` (default `true`): answers API calls from the in-browser mock. To use a real backend, set it to `false` and point `apiBaseUrl` at the server. The mock interceptor and the demo-user list then drop out of `app.config.ts`, and no feature code changes.
+- **No `.env` file.** Angular doesn't read one, and with nothing secret to store, it would only suggest that secrets exist. `.gitignore` still blocks `.env*` (except `.env.example`), keys and certificates (`*.pem`, `*.key`, `*.p12`, …), credential JSON files, logs and local tool settings, so none can be committed by accident.
+
 ## Architecture decisions
 
 - **One set of business rules.** `core/application-rules.ts` holds the formats, minimum age and the submit check as plain functions. The Angular validators wrap them for the form, and the server uses them on submit, so the browser and the server can't drift apart.
 - **Domain model first.** `core/models.ts` defines roles, statuses, the three-part application form (business, owner, banking), risk events and the paging/query contracts. Every later layer is typed against it.
-- **Mock backend as an interceptor**, not json-server. It needs no extra process, and every permission rule lives in one file. Swapping in a real API means removing `mockApiInterceptor` and the `DEMO_USERS` provider from `app.config.ts`; `ApplicationApi` and every feature stay the same.
+- **Mock backend as an interceptor**, not json-server. It needs no extra process, and every permission rule lives in one file. Swapping in a real API is a configuration change (see [Configuration & secrets](#configuration--secrets)); `ApplicationApi` and every feature stay the same.
 - **Lazy features.** Each route ships as its own chunk; `@angular/forms` is loaded only with the wizard and detail pages, never in the initial bundle. The wizard route is declared before `/:id`, so `/applications/new` never matches as an id.
 - **Route params as inputs.** With `withComponentInputBinding()`, `:id` arrives as a signal `input()`, with no `ActivatedRoute` subscriptions.
 - **OnPush and `protected` template members** (Angular style guide). Components react to signals; members used only by the template are `protected`, so a component's public API is just its inputs.
@@ -189,7 +199,7 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 
 - `app.routes.spec`: every page is lazy-loaded; one wizard route matches `new` and `:id/edit`, sits before `:id` and carries both guards; every page has a title; root and unknown URLs redirect.
 - `mock-api.interceptor.spec`: the server rules, tested through `ApplicationApi`. Covers draft saves that ignore forged status, owner, assignment and history; malformed drafts rejected without partial updates; submit refused (422, with reasons) until the application is complete; per-status counts within the user's scope and search, 401 for missing or expired tokens, refresh-token rotation, role-scoped lists, server-side paging and filtering, 404 for out-of-scope records, masking with audited reveal, the draft lifecycle, role checks on decisions and assignment, and server-side validation of decisions (no unknown values, no blank comments, no deciding twice) and assignment (only while under review).
-- `auth.interceptor.spec`: bearer header on API calls only; **3 concurrent 401s → exactly 1 refresh → 3 retries with the new token**; a late 401 reuses the new token; no second retry; one logout when the refresh fails; non-401 errors and signed-out requests pass through. One end-to-end test does the same against the real mock `POST /api/auth/refresh`.
+- `auth.interceptor.spec`: bearer header on API calls only, including under a configured `API_BASE_URL` and never to look-alike hosts; **3 concurrent 401s → exactly 1 refresh → 3 retries with the new token**; a late 401 reuses the new token; no second retry; one logout when the refresh fails; non-401 errors and signed-out requests pass through. One end-to-end test does the same against the real mock `POST /api/auth/refresh`.
 - `guards.spec`: anonymous users go to `/login` with `returnUrl`; role blocking and multi-role access.
 - `login.component.spec`: `safeReturnUrl` rejects external, protocol-relative and `javascript:` URLs; sign-in returns to the intercepted page; failures show an error and re-enable the buttons.
 - `app.spec`: the navbar is hidden while signed out, "New application" shows for SALES only, logout works, the phone menu opens and closes with `aria-expanded`, and the skip link moves focus without leaving the page.
@@ -204,7 +214,7 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 
 ## Next steps
 
-- A real backend: remove `mockApiInterceptor` and the `DEMO_USERS` provider; send the CSP as a header with a nonce, plus `frame-ancestors`.
+- A real backend: set `useMockApi: false` and `apiBaseUrl` in the environment file; send the CSP as a header with a nonce, plus `frame-ancestors`.
 - End-to-end tests (Playwright) for the main journeys, including the CSP check above.
 
 ## AI assistance disclosure

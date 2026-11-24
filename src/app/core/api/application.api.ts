@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
+import { API_BASE_URL } from '../config';
 import {
   ApplicationForm,
   ApplicationQuery,
@@ -13,7 +14,8 @@ import {
 @Injectable({ providedIn: 'root' })
 export class ApplicationApi {
   private readonly http = inject(HttpClient);
-  private readonly base = '/api/applications';
+  private readonly apiBase = inject(API_BASE_URL);
+  private readonly base = `${this.apiBase}/applications`;
 
   list(q: ApplicationQuery): Observable<Page<MerchantApplication>> {
     const params = new HttpParams({
@@ -51,6 +53,6 @@ export class ApplicationApi {
     return this.http.get<{ value: string }>(`${this.base}/${id}/reveal/${field}`);
   }
   reviewers() {
-    return this.http.get<User[]>('/api/users/reviewers');
+    return this.http.get<User[]>(`${this.apiBase}/users/reviewers`);
   }
 }

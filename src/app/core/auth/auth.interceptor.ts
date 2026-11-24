@@ -1,11 +1,8 @@
 import { HttpErrorResponse, HttpInterceptorFn, HttpRequest } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { catchError, of, switchMap, throwError } from 'rxjs';
+import { API_BASE_URL } from '../config';
 import { AuthService } from './auth.service';
-
-/** The bearer token is only ever sent to our own API, never to third-party origins. */
-const isApi = (url: string) => url.startsWith('/api/');
-const isAuthEndpoint = (url: string) => url.startsWith('/api/auth/');
 
 const withToken = (req: HttpRequest<unknown>, token: string) =>
   req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
@@ -19,7 +16,11 @@ const withToken = (req: HttpRequest<unknown>, token: string) =>
  * - The retry runs outside catchError, so a second 401 goes straight to the caller (no loop).
  */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
-  if (!isApi(req.url) || isAuthEndpoint(req.url)) return next(req);
+  // The bearer token is only ever sent to our own API (never to third-party origins), and not
+  // to the auth endpoints, which take credentials or a refresh token instead. The trailing "/"
+  // stops a look-alike host such as "https://api.example.com.evil.test" from matching.
+  const api = inject(API_BASE_URL);
+  if (!req.url.startsWith(`${api}/`) || req.url.startsWith(`${api}/auth/`)) return next(req);
 
   const auth = inject(AuthService);
   const sentToken = auth.token;
