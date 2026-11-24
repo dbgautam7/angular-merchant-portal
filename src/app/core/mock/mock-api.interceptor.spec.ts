@@ -156,4 +156,20 @@ describe('mockApiInterceptor (server rules)', () => {
     });
     expect(call(api.assign('app-006', 'u-sales-1')).status).toBe(400);
   });
+
+  it('validates decisions and assignments on the server, not just in the UI', () => {
+    loginAs('u-rev-2'); // app-001 is SUBMITTED and assigned to u-rev-2
+    const post = (body: object) => call(http.post('/api/applications/app-001/decision', body));
+    expect(post({ decision: 'DRAFT', comment: 'Reopen it' }).status).toBe(400);
+    expect(post({ decision: 'APPROVED', comment: '   ' }).status).toBe(400);
+    expect(post({ decision: 'APPROVED' }).status).toBe(400);
+
+    const decided = call(api.decide('app-001', 'REJECTED', '  Missing documents  ')).value!;
+    expect(decided.riskHistory.at(-1)?.comment).toBe('Missing documents');
+    expect(call(api.decide('app-001', 'APPROVED', 'Changed my mind')).status).toBe(403);
+
+    loginAs('u-admin'); // app-005 is a DRAFT; app-003 is already APPROVED
+    expect(call(api.assign('app-005', 'u-rev-1')).status).toBe(403);
+    expect(call(api.assign('app-003', 'u-rev-1')).status).toBe(403);
+  });
 });

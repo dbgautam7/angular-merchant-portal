@@ -17,6 +17,7 @@ import {
 import { ApplicationApi } from '../../core/api/application.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { ApplicationQuery, ApplicationStatus, MerchantApplication, Page } from '../../core/models';
+import { CategoryLabelPipe } from '../../shared/categories';
 import { STATUS_LABELS, StatusBadgeComponent } from '../../shared/status-badge.component';
 
 export const PAGE_SIZE = 10;
@@ -58,7 +59,7 @@ function reduce(state: ListState, event: ListEvent): ListState {
 
 @Component({
   selector: 'app-dashboard',
-  imports: [DatePipe, RouterLink, StatusBadgeComponent],
+  imports: [CategoryLabelPipe, DatePipe, RouterLink, StatusBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',

@@ -84,7 +84,9 @@
           <tr>
             <td class="font-monospace">{{ a.id }}</td>
             <td>{{ name }}</td>
-            <td class="d-none d-md-table-cell">{{ a.business.category || '—' }}</td>
+            <td class="d-none d-md-table-cell">
+              {{ (a.business.category | categoryLabel) || '—' }}
+            </td>
             <td><app-status-badge [status]="a.status" /></td>
             <td class="d-none d-md-table-cell">{{ a.updatedAt | date: 'mediumDate' }}</td>
             <td class="text-end text-nowrap">

@@ -151,22 +151,25 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
     touch();
     return ok(toDto(app, user));
   }
+  const open = app.status === 'SUBMITTED' || app.status === 'IN_REVIEW';
+
   if (action === 'decision' && method === 'POST') {
-    if (!need('REVIEWER', 'ADMIN') || !['SUBMITTED', 'IN_REVIEW'].includes(app.status))
-      return forbid();
-    const decision = body['decision'] as 'APPROVED' | 'REJECTED';
+    if (!need('REVIEWER', 'ADMIN') || !open) return forbid();
+    // Validated here too: a client could send any status, e.g. DRAFT to reopen the application.
+    const decision = body['decision'];
+    if (decision !== 'APPROVED' && decision !== 'REJECTED') {
+      return fail(400, 'Decision must be APPROVED or REJECTED', url);
+    }
+    const comment = typeof body['comment'] === 'string' ? body['comment'].trim() : '';
+    if (!comment) return fail(400, 'A comment is required', url);
     app.status = decision;
-    app.riskHistory.push({
-      at: new Date().toISOString(),
-      by: user.name,
-      decision,
-      comment: String(body['comment'] ?? ''),
-    });
+    app.riskHistory.push({ at: new Date().toISOString(), by: user.name, decision, comment });
     touch();
     return ok(toDto(app, user));
   }
   if (action === 'assign' && method === 'PUT') {
-    if (!need('ADMIN')) return forbid();
+    // Only while under review: assigning a draft would show it to a reviewer before submission.
+    if (!need('ADMIN') || !open) return forbid();
     const reviewer = USERS.find((u) => u.id === body['reviewerId'] && u.role === 'REVIEWER');
     if (!reviewer) return fail(400, 'Invalid reviewer', url);
     app.assignedTo = reviewer.id;

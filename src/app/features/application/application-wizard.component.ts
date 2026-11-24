@@ -1,13 +1,10 @@
 import { DatePipe, DecimalPipe, DOCUMENT } from '@angular/common';
 import {
-  afterNextRender,
   ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
-  ElementRef,
   inject,
-  Injector,
   input,
   signal,
 } from '@angular/core';
@@ -18,7 +15,10 @@ import { catchError, map, Observable, of, startWith, switchMap, tap, throwError 
 import { ApplicationApi } from '../../core/api/application.api';
 import { ApplicationForm, MerchantApplication } from '../../core/models';
 import { autoSave } from '../../shared/auto-save';
+import { CATEGORY_LABELS, CategoryLabelPipe } from '../../shared/categories';
+import { injectFocus } from '../../shared/focus';
 import { FieldControlDirective, FormFieldComponent } from '../../shared/form-field';
+import { maskValue } from '../../shared/mask';
 import { CanLeave } from '../../shared/unsaved-changes.guard';
 import {
   accountNumber,
@@ -42,13 +42,6 @@ const STEPS: readonly { key: StepKey; label: string; title: string }[] = [
   { key: 'review', label: 'Review', title: 'Review and submit' },
 ];
 const REVIEW = STEPS.length - 1;
-
-const CATEGORIES = [
-  { value: 'RETAIL', label: 'Retail' },
-  { value: 'TRAVEL', label: 'Travel' },
-  { value: 'FOOD', label: 'Food & beverage' },
-  { value: 'DIGITAL', label: 'Digital goods' },
-];
 
 /** One group per step; the shape matches ApplicationForm, so getRawValue() is the API payload. */
 function buildForm(fb: NonNullableFormBuilder) {
@@ -74,12 +67,16 @@ function buildForm(fb: NonNullableFormBuilder) {
   });
 }
 
-/** Shows the last 4 characters, the same way the server masks sensitive values. */
-const mask = (value: string): string => '•'.repeat(Math.max(0, value.length - 4)) + value.slice(-4);
-
 @Component({
   selector: 'app-application-wizard',
-  imports: [DatePipe, DecimalPipe, ReactiveFormsModule, FormFieldComponent, FieldControlDirective],
+  imports: [
+    CategoryLabelPipe,
+    DatePipe,
+    DecimalPipe,
+    ReactiveFormsModule,
+    FormFieldComponent,
+    FieldControlDirective,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './application-wizard.component.html',
   styleUrl: './application-wizard.component.scss',
@@ -89,15 +86,17 @@ export class ApplicationWizardComponent implements CanLeave {
   private readonly api = inject(ApplicationApi);
   private readonly router = inject(Router);
   private readonly window = inject(DOCUMENT).defaultView;
-  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
-  private readonly injector = inject(Injector);
+  private readonly focus = injectFocus();
   private readonly destroyRef = inject(DestroyRef);
 
   /** Bound from the :id route param; undefined on /applications/new. */
   readonly id = input<string>();
 
   protected readonly steps = STEPS;
-  protected readonly categories = CATEGORIES;
+  protected readonly categories = Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
+    value,
+    label,
+  }));
   protected readonly form = buildForm(inject(NonNullableFormBuilder));
 
   protected readonly stepIndex = signal(0);
@@ -167,12 +166,12 @@ export class ApplicationWizardComponent implements CanLeave {
         : -1;
     if (blocker === -1) {
       this.stepIndex.set(target);
-      this.focusAfterRender('#step-heading');
+      this.focus('#step-heading');
       return;
     }
     this.section(STEPS[blocker].key as SectionKey).markAllAsTouched();
     this.stepIndex.set(blocker);
-    this.focusAfterRender('[aria-invalid="true"]');
+    this.focus('[aria-invalid="true"]');
   }
 
   protected isComplete(key: StepKey): boolean {
@@ -185,11 +184,7 @@ export class ApplicationWizardComponent implements CanLeave {
   }
 
   protected mask(value: string): string {
-    return mask(value);
-  }
-
-  protected categoryLabel(value: string): string {
-    return CATEGORIES.find((c) => c.value === value)?.label ?? value;
+    return maskValue(value);
   }
 
   private submit(): void {
@@ -260,11 +255,5 @@ export class ApplicationWizardComponent implements CanLeave {
     this.stepIndex.set(0);
     this.submitError.set(null);
     return 'ready';
-  }
-
-  private focusAfterRender(selector: string): void {
-    afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus(), {
-      injector: this.injector,
-    });
   }
 }

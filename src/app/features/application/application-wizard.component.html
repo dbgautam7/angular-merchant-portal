@@ -223,7 +223,7 @@
                 <dt>Registration number</dt>
                 <dd>{{ v.business.registrationNumber }}</dd>
                 <dt>Category</dt>
-                <dd>{{ categoryLabel(v.business.category) }}</dd>
+                <dd>{{ v.business.category | categoryLabel }}</dd>
                 <dt>Website</dt>
                 <dd>{{ v.business.website || '—' }}</dd>
               </dl>

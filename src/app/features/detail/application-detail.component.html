@@ -1,0 +1,229 @@
+<nav aria-label="Breadcrumb">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a routerLink="/applications">Applications</a></li>
+    <li class="breadcrumb-item active font-monospace" aria-current="page">{{ id() }}</li>
+  </ol>
+</nav>
+
+@let state = load();
+@if (state.status === 'error') {
+  @if (state.notFound) {
+    <div class="alert alert-warning" role="alert">
+      This application doesn't exist, or you don't have access to it.
+    </div>
+  } @else {
+    <div
+      class="alert alert-danger d-flex flex-wrap justify-content-between align-items-center gap-2"
+      role="alert"
+    >
+      Could not load the application.
+      <button type="button" class="btn btn-outline-danger btn-sm" (click)="retry()">Retry</button>
+    </div>
+  }
+} @else if (app(); as a) {
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+    <h1 class="h3 mb-0 me-1">{{ a.business.legalName || '(untitled draft)' }}</h1>
+    <app-status-badge [status]="a.status" />
+    @if (can().edit) {
+      <a
+        class="btn btn-sm btn-outline-primary ms-auto"
+        [routerLink]="['/applications', a.id, 'edit']"
+        >Continue editing</a
+      >
+    }
+  </div>
+  <p class="small text-body-secondary mb-4">
+    Updated {{ a.updatedAt | date: 'medium' }}
+    @if (can().seeReviewer) {
+      · Reviewer: {{ reviewerName() }}
+    }
+  </p>
+
+  @if (notice(); as message) {
+    <div id="action-notice" class="alert alert-success" role="status" tabindex="-1">
+      {{ message }}
+    </div>
+  }
+  @if (actionError(); as message) {
+    <div class="alert alert-danger" role="alert">{{ message }}</div>
+  }
+
+  @let hasActions = can().assign || can().decide;
+  <div class="row g-4">
+    <div [class]="hasActions ? 'col-lg-8' : 'col-12'">
+      <section class="card mb-4" aria-labelledby="business-heading">
+        <h2 id="business-heading" class="card-header h6">Business</h2>
+        <dl class="card-body row mb-0">
+          <dt class="col-sm-4">Registration number</dt>
+          <dd class="col-sm-8">{{ a.business.registrationNumber || '—' }}</dd>
+          <dt class="col-sm-4">Category</dt>
+          <dd class="col-sm-8">{{ (a.business.category | categoryLabel) || '—' }}</dd>
+          <dt class="col-sm-4">Website</dt>
+          <dd class="col-sm-8 text-break">
+            @if (a.business.website) {
+              <!-- Angular sanitizes bound URLs, so a javascript: value would never run. -->
+              <a [href]="a.business.website" target="_blank" rel="noopener noreferrer">{{
+                a.business.website
+              }}</a>
+            } @else {
+              —
+            }
+          </dd>
+        </dl>
+      </section>
+
+      <section class="card mb-4" aria-labelledby="owner-heading">
+        <h2 id="owner-heading" class="card-header h6">Owner</h2>
+        <dl class="card-body row mb-0">
+          <dt class="col-sm-4">Full name</dt>
+          <dd class="col-sm-8">{{ a.owner.fullName || '—' }}</dd>
+          <dt class="col-sm-4">Email</dt>
+          <dd class="col-sm-8 text-break">{{ a.owner.email || '—' }}</dd>
+          <dt class="col-sm-4">Date of birth</dt>
+          <dd class="col-sm-8">{{ (a.owner.dateOfBirth | date: 'mediumDate') || '—' }}</dd>
+          <dt class="col-sm-4">Tax ID</dt>
+          <dd class="col-sm-8">
+            @if (a.owner.taxId) {
+              <app-sensitive-value
+                [appId]="a.id"
+                field="taxId"
+                [value]="a.owner.taxId"
+                label="tax ID"
+                [canReveal]="can().reveal"
+              />
+            } @else {
+              —
+            }
+          </dd>
+        </dl>
+      </section>
+
+      <section class="card mb-4" aria-labelledby="banking-heading">
+        <h2 id="banking-heading" class="card-header h6">Banking</h2>
+        <dl class="card-body row mb-0">
+          <dt class="col-sm-4">Bank name</dt>
+          <dd class="col-sm-8">{{ a.banking.bankName || '—' }}</dd>
+          <dt class="col-sm-4">Account number</dt>
+          <dd class="col-sm-8">
+            @if (a.banking.accountNumber) {
+              <app-sensitive-value
+                [appId]="a.id"
+                field="accountNumber"
+                [value]="a.banking.accountNumber"
+                label="account number"
+                [canReveal]="can().reveal"
+              />
+            } @else {
+              —
+            }
+          </dd>
+          <dt class="col-sm-4">Monthly volume</dt>
+          <dd class="col-sm-8">
+            @if (a.banking.monthlyVolume !== null) {
+              USD {{ a.banking.monthlyVolume | number: '1.0-0' }}
+            } @else {
+              —
+            }
+          </dd>
+        </dl>
+      </section>
+
+      <section class="card" aria-labelledby="history-heading">
+        <h2 id="history-heading" class="card-header h6">Risk history</h2>
+        <ol class="list-group list-group-flush">
+          @for (event of history(); track $index) {
+            @let badge = eventBadges[event.decision];
+            <li class="list-group-item">
+              <div class="d-flex flex-wrap justify-content-between gap-2">
+                <span>
+                  <span class="badge" [class]="badge.css">{{ badge.label }}</span>
+                  by {{ event.by }}
+                </span>
+                <time class="small text-body-secondary" [attr.datetime]="event.at">{{
+                  event.at | date: 'medium'
+                }}</time>
+              </div>
+              <p class="mb-0 mt-1 text-break">{{ event.comment }}</p>
+            </li>
+          } @empty {
+            <li class="list-group-item text-body-secondary">No risk decisions yet.</li>
+          }
+        </ol>
+      </section>
+    </div>
+
+    @if (hasActions) {
+      <aside class="col-lg-4" aria-label="Review actions">
+        @if (can().assign) {
+          <section class="card mb-4" aria-labelledby="assign-heading">
+            <div class="card-body">
+              <h2 id="assign-heading" class="h6">Assignment</h2>
+              @if (reviewers(); as list) {
+                <app-form-field label="Reviewer" [hint]="'Currently: ' + reviewerName()">
+                  <select appFieldControl class="form-select" [formControl]="reviewerControl">
+                    <option value="">Choose a reviewer</option>
+                    @for (r of list; track r.id) {
+                      <option [value]="r.id">{{ r.name }}</option>
+                    }
+                  </select>
+                </app-form-field>
+                <button
+                  type="button"
+                  class="btn btn-outline-primary w-100 mt-3"
+                  [disabled]="
+                    busy() || !reviewerControl.value || reviewerControl.value === a.assignedTo
+                  "
+                  (click)="assign()"
+                >
+                  Assign
+                </button>
+              } @else {
+                <p class="small text-danger mb-0">Could not load the reviewer list.</p>
+              }
+            </div>
+          </section>
+        }
+
+        @if (can().decide) {
+          <section class="card" aria-labelledby="decision-heading">
+            <form class="card-body" [formGroup]="decisionForm" novalidate>
+              <h2 id="decision-heading" class="h6">Risk decision</h2>
+              <app-form-field label="Comment" hint="Saved to the risk history with your name.">
+                <textarea
+                  appFieldControl
+                  formControlName="comment"
+                  class="form-control"
+                  rows="3"
+                ></textarea>
+              </app-form-field>
+              <div class="d-flex gap-2 mt-3">
+                <button
+                  type="button"
+                  class="btn btn-success flex-fill"
+                  [disabled]="busy()"
+                  (click)="decide('APPROVED')"
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-danger flex-fill"
+                  [disabled]="busy()"
+                  (click)="decide('REJECTED')"
+                >
+                  Reject
+                </button>
+              </div>
+            </form>
+          </section>
+        }
+      </aside>
+    }
+  </div>
+} @else {
+  <div class="text-center py-5">
+    <div class="spinner-border" role="status">
+      <span class="visually-hidden">Loading application…</span>
+    </div>
+  </div>
+}
