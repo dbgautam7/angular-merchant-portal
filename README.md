@@ -2,14 +2,32 @@
 
 Angular 20 app for merchant applications, with role-based access (SALES / REVIEWER / ADMIN).
 It runs fully offline: an in-memory mock API is built in, so you only need `npm start`.
-It was built in six stages, one commit each. **This last stage adds the detail and review page**: risk history, approve/reject and assignment for reviewers and admins only, masked sensitive values with an audited reveal, and a Content Security Policy.
+It was built in six stages, one commit each, followed by a UI redesign, a security review and a round of hardening (see the [decision records](docs/decisions/)).
 
 ```bash
 npm install
-npm start        # http://localhost:4200, then pick a demo user on the login screen
-npm test         # Vitest + Angular TestBed
-npm run build
+npm start               # http://localhost:4200, then pick a demo user on the sign-in page
+npm test                # unit tests: Vitest + Angular TestBed
+npm run test:coverage   # the same, with a coverage report in coverage/
+npm run lint            # ESLint: TypeScript, templates and accessibility rules
+npm run build           # production build in dist/
+npx playwright install chromium   # once, for the end-to-end tests
+npm run e2e             # builds, then runs the Playwright journeys on the production build
 ```
+
+## Results in numbers
+
+| What                                                         | Result                                                                                                                                                                        |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit tests                                                   | **124** across 16 files, all passing                                                                                                                                          |
+| Unit test coverage                                           | **99.3%** statements, **93.1%** branches, **91.4%** functions (all app code the tests load; `main.ts` and `app.config.ts` are covered by the end-to-end tests)                |
+| End-to-end journeys (Playwright, production build)           | **13**: SALES submit, auto-save on leave, validation, reviewer reveal and approve, ADMIN assign, role switches, guards, deep links, a phone check, and 4 accessibility scans  |
+| Accessibility (axe, WCAG 2.1 AA)                             | **0 violations** on sign-in, dashboard, form with errors, and detail                                                                                                          |
+| CSP violations, console errors, requests to other origins    | **0** in every end-to-end test (any one fails the test)                                                                                                                       |
+| Lint (ESLint + angular-eslint, incl. template accessibility) | **0 problems**                                                                                                                                                                |
+| Initial download                                             | **≈114 kB** gzipped, of which global CSS **18 kB** (was 23 kB with stock Bootstrap); every page is a lazy chunk of 2 to 7 kB                                                  |
+| Bugs caught by tests before review                           | the mass-assignment bypass (security audit), two navigation races (first end-to-end run), a skip link that reloaded the app, and a date-of-birth check off by one west of UTC |
+| Fixes proven by mutation checks                              | each fix reverted on purpose: its own test failed every time                                                                                                                  |
 
 ## Roadmap
 
@@ -65,23 +83,24 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
 
 `mockApiInterceptor` answers every `/api/*` request in memory, with 250 ms of simulated latency. **It enforces permissions itself.** Hiding a button in the UI only improves the UX; it is not the security boundary.
 
-| Method & path                              | Who                  | Notes                                                                           |
-| ------------------------------------------ | -------------------- | ------------------------------------------------------------------------------- |
-| `POST /api/auth/login`                     | anyone               | `{ username }` (a demo user id) returns the user plus access and refresh tokens |
-| `POST /api/auth/refresh`                   | refresh-token holder | rotates the pair; each refresh token works **once**                             |
-| `GET /api/applications?page&size&status&q` | all roles            | server-side paging and filtering, scoped by role; `q=error` simulates a 500     |
-| `GET /api/applications/summary?q`          | all roles            | counts per status in the same scope, for the dashboard tabs                     |
-| `POST /api/applications`                   | SALES                | creates an empty draft                                                          |
-| `GET /api/applications/:id`                | anyone in scope      | sensitive fields come back masked                                               |
-| `PUT /api/applications/:id`                | SALES (own draft)    | saves the form fields only (anything else is ignored); 403 once submitted       |
-| `POST /api/applications/:id/submit`        | SALES (own draft)    | DRAFT → SUBMITTED, only if complete and valid (422 with the reasons otherwise)  |
-| `POST /api/applications/:id/decision`      | REVIEWER, ADMIN      | `{ decision, comment }` on SUBMITTED / IN_REVIEW; validated; added to history   |
-| `PUT /api/applications/:id/assign`         | ADMIN                | `{ reviewerId }`, only while under review; SUBMITTED → IN_REVIEW                |
-| `GET /api/applications/:id/reveal/:field`  | REVIEWER, ADMIN      | unmasked `taxId` / `accountNumber`, audit-logged                                |
-| `GET /api/users/reviewers`                 | ADMIN                | reviewer list for assignment                                                    |
+| Method & path                              | Who                      | Notes                                                                           |
+| ------------------------------------------ | ------------------------ | ------------------------------------------------------------------------------- |
+| `POST /api/auth/login`                     | anyone                   | `{ username }` (a demo user id) returns the user plus access and refresh tokens |
+| `POST /api/auth/refresh`                   | refresh-token holder     | rotates the pair; each refresh token works **once**                             |
+| `GET /api/applications?page&size&status&q` | all roles                | server-side paging and filtering, scoped by role; `q=error` simulates a 500     |
+| `GET /api/applications/summary?q`          | all roles                | counts per status in the same scope, for the dashboard tabs                     |
+| `POST /api/applications`                   | SALES                    | creates an empty draft                                                          |
+| `GET /api/applications/:id`                | anyone in scope          | sensitive fields come back masked                                               |
+| `PUT /api/applications/:id`                | SALES (own draft)        | saves the form fields only (anything else is ignored); 403 once submitted       |
+| `POST /api/applications/:id/submit`        | SALES (own draft)        | DRAFT → SUBMITTED, only if complete and valid (422 with the reasons otherwise)  |
+| `POST /api/applications/:id/decision`      | assigned REVIEWER        | `{ decision, comment }` on SUBMITTED / IN_REVIEW; validated; added to history   |
+| `PUT /api/applications/:id/assign`         | ADMIN                    | `{ reviewerId }`, only while under review; SUBMITTED → IN_REVIEW                |
+| `GET /api/applications/:id/reveal/:field`  | assigned REVIEWER, ADMIN | unmasked `taxId` / `accountNumber`, audit-logged                                |
+| `GET /api/users/reviewers`                 | ADMIN                    | reviewer list for assignment                                                    |
 
 - **Scope.** SALES sees only applications they created, REVIEWER only those assigned to them, ADMIN everything. Anything out of scope returns **404, not 403**, so its existence isn't leaked.
 - **Tokens.** Access tokens live 30 s on purpose, so the refresh flow below is easy to trigger. Requests without a valid token get 401.
+- **One policy for record permissions** (`core/mock/policy.ts`, [decision record](docs/decisions/0002-server-decided-permissions.md)). `allowedActions(user, application)` decides edit, submit, decide, assign and reveal. Every endpoint enforces it, and every application in a response carries the caller's `allowedActions`, which the UI displays without re-deriving anything. As the brief says, decisions belong to the _assigned_ reviewer; ADMIN assigns but does not decide.
 - **Masking.** Tax ID and account number leave the "server" as `••••••••6789`. The only exception is the author's own draft, which they need to edit.
 - **Validation.** The server checks what it is sent, not just who sends it:
   - **No mass assignment.** A draft save copies only the known form fields, with type checks. Status, owner, assignment and risk history can't be written through it, so a SALES user can't approve their own application or forge a reviewer's decision. A field of the wrong type rejects the whole save (400), so nothing is half-applied.
@@ -92,7 +111,7 @@ Dependencies flow one way: `features → shared → core`. `core` never imports 
 ## Authentication & token refresh
 
 - **Login.** The demo login lists fictional users (no passwords exist). The list comes from the `DEMO_USERS` injection token, which `app.config.ts` fills from the mock seed data, so the login feature never imports mock code.
-- **Session.** `AuthService` holds the user in signals and keeps tokens **in memory only**, never in `localStorage`, so an XSS bug cannot read them from storage. A page reload means signing in again. In production, the refresh token would live in an httpOnly cookie.
+- **Session.** `AuthService` holds the user in signals and keeps both tokens **in memory only**, never in Web Storage, so an XSS bug finds nothing to steal and keep. A page reload means signing in again. That is a deliberate choice for this demo, compared with `localStorage`, an `httpOnly` refresh cookie and a backend-for-frontend in [decision record 1](docs/decisions/0001-session-tokens.md). In production: access token in memory, refresh token in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to `/api/auth` and rotated with reuse detection, and a silent refresh on start-up. Only `AuthService` changes; the interceptor and features stay the same.
 - **Guards.** `authGuard` sends anonymous users to `/login?returnUrl=…` and the login page returns them there afterwards. `safeReturnUrl` accepts in-app paths only, so the parameter can't become an open redirect. `roleGuard('SALES')` protects the create and edit routes. Guards run before a lazy chunk is fetched. They are UX only: the API enforces the same roles.
 - **Interceptor** (`authInterceptor`):
   - attaches `Authorization: Bearer …` to our own `/api/*` calls only, never to auth endpoints or third-party origins;
@@ -131,7 +150,7 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 
 ## Detail & review
 
-- **One page, three views.** SALES sees their application read-only, with "Continue editing" on a draft. REVIEWER sees the risk decision panel for applications assigned to them. ADMIN also gets the assignment panel. Who sees which control is one `computed` (`can`) in `application-detail.component.ts`, so the policy can be reviewed in one place; the API enforces the same rules.
+- **One page, three views.** SALES sees their application read-only, with "Continue editing" on a draft. REVIEWER sees the risk decision panel for applications assigned to them. ADMIN gets the assignment panel, but not the decision. Which controls show comes straight from the server's `allowedActions` for this user and this application, so after a decision the panel disappears because the response no longer allows `decide`. The API enforces the same policy on every request.
 - **Loading.** `toObservable(id)` plus a Retry subject feed `switchMap`, as on the dashboard. "Not found" (a 404, which is also what the API answers outside your scope) is shown differently from errors that Retry can fix.
 - **Actions update in place.** Approve, Reject and Assign return the updated application. It goes into a `linkedSignal`, which follows each load but can also be set locally, so the page shows the new status and history without a refetch. One action runs at a time, and focus moves to the confirmation because the panel that had focus is gone. If the server refuses because the application changed (someone else decided, or it was reassigned), the page reloads and says so.
 - **Decisions need a comment** (5 to 500 characters, not just spaces), using the same `<app-form-field>` as the wizard; the API checks it again. Comments are saved to the risk history with the reviewer's name, newest first.
@@ -187,6 +206,8 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 
 ## Architecture decisions
 
+The bigger choices are written up as decision records in [`docs/decisions/`](docs/decisions/): [where the session tokens live](docs/decisions/0001-session-tokens.md), [server-decided permissions](docs/decisions/0002-server-decided-permissions.md) and the [testing strategy](docs/decisions/0003-testing-strategy.md).
+
 - **One set of business rules.** `core/application-rules.ts` holds the formats, minimum age and the submit check as plain functions. The Angular validators wrap them for the form, and the server uses them on submit, so the browser and the server can't drift apart.
 - **Domain model first.** `core/models.ts` defines roles, statuses, the three-part application form (business, owner, banking), risk events and the paging/query contracts. Every later layer is typed against it.
 - **Mock backend as an interceptor**, not json-server. It needs no extra process, and every permission rule lives in one file. Swapping in a real API is a configuration change (see [Configuration & secrets](#configuration--secrets)); `ApplicationApi` and every feature stay the same.
@@ -195,27 +216,42 @@ Four steps (Business, Owner, Banking, Review) over one typed reactive form. Each
 - **OnPush and `protected` template members** (Angular style guide). Components react to signals; members used only by the template are `protected`, so a component's public API is just its inputs.
 - **Placeholders kept their final paths and class names**, so each stage replaced files without touching the route table.
 
-## Tests (`npm test`)
+## Tests
 
+Unit tests (`npm test`) check rules and states; end-to-end tests (`npm run e2e`) check whole journeys in a real browser on the production build. See the [testing strategy](docs/decisions/0003-testing-strategy.md). CI (`.github/workflows/ci.yml`) runs lint, formatting, unit tests with coverage, and the end-to-end suite on every push and pull request.
+
+**End-to-end (Playwright, `e2e/`):** every test fails on a console error, CSP violation or request to another origin.
+
+- `sales.spec`: fill in every step, auto-save creates the draft and switches the URL, review shows masked values, submit, then find it on the dashboard; Next blocked on an invalid step with focus on the first error; leaving right after typing still saves the draft.
+- `review.spec`: the assigned reviewer reveals and hides a masked value, needs a comment, approves; then the author sees the outcome without review controls. ADMIN assigns a reviewer but has no Approve button; the new reviewer then gets the application.
+- `navigation.spec`: role-specific navigation and data for each role; a deep link goes through sign-in and back; a reviewer can't reach the SALES-only form even by URL; a phone-sized run of the menu and form with no horizontal overflow.
+- `accessibility.spec`: axe (WCAG 2.1 A/AA) finds no violations on the four main pages.
+
+**Unit (Vitest + TestBed, `src/**/*.spec.ts`):**
+
+- `policy.spec`: every role against every status, as a table, including ADMIN assigning but never deciding.
+- `title-strategy.spec`: "Applications · Merchant Portal" page titles.
 - `app.routes.spec`: every page is lazy-loaded; one wizard route matches `new` and `:id/edit`, sits before `:id` and carries both guards; every page has a title; root and unknown URLs redirect.
-- `mock-api.interceptor.spec`: the server rules, tested through `ApplicationApi`. Covers draft saves that ignore forged status, owner, assignment and history; malformed drafts rejected without partial updates; submit refused (422, with reasons) until the application is complete; per-status counts within the user's scope and search, 401 for missing or expired tokens, refresh-token rotation, role-scoped lists, server-side paging and filtering, 404 for out-of-scope records, masking with audited reveal, the draft lifecycle, role checks on decisions and assignment, and server-side validation of decisions (no unknown values, no blank comments, no deciding twice) and assignment (only while under review).
+- `mock-api.interceptor.spec`: the server rules, tested through `ApplicationApi`. Covers each caller's `allowedActions` and the refusal of everything else (ADMIN cannot decide); draft saves that ignore forged status, owner, assignment and history; malformed drafts rejected without partial updates; submit refused (422, with reasons) until the application is complete; per-status counts within the user's scope and search, 401 for missing or expired tokens, refresh-token rotation, role-scoped lists, server-side paging and filtering, 404 for out-of-scope records, masking with audited reveal, the draft lifecycle, role checks on decisions and assignment, and server-side validation of decisions (no unknown values, no blank comments, no deciding twice) and assignment (only while under review).
 - `auth.interceptor.spec`: bearer header on API calls only, including under a configured `API_BASE_URL` and never to look-alike hosts; **3 concurrent 401s → exactly 1 refresh → 3 retries with the new token**; a late 401 reuses the new token; no second retry; one logout when the refresh fails; non-401 errors and signed-out requests pass through. One end-to-end test does the same against the real mock `POST /api/auth/refresh`.
 - `guards.spec`: anonymous users go to `/login` with `returnUrl`; role blocking and multi-role access.
 - `login.component.spec`: `safeReturnUrl` rejects external, protocol-relative and `javascript:` URLs; sign-in returns to the intercepted page; failures show an error and re-enable the buttons.
 - `app.spec`: the navbar is hidden while signed out, "New application" shows for SALES only, logout works, the phone menu opens and closes with `aria-expanded`, and the skip link moves focus without leaving the page.
-- `dashboard.component.spec` (real router via `RouterTestingHarness`): the URL drives the API query; invalid params fall back; role-aware actions for SALES and REVIEWER; debounced search resets the page and replaces history; status tabs are links that keep the search, reset the page and mark the current tab; tabs show counts and still work if counts fail; numbered pagination and the page-gap algorithm; paging and its disabled ends; error → Retry recovers with the same filters; rows stay visible and busy while the next page loads; Clear filters on an empty result.
+- `dashboard.component.spec` (real router via `RouterTestingHarness`): the URL drives the API query; invalid params fall back; Edit links only where the server's `allowedActions` allows (another salesperson's draft gets none) and none for REVIEWER; debounced search resets the page and replaces history, and is dropped if the user has already clicked through to another page; status tabs are links that keep the search, reset the page and mark the current tab; tabs show counts and still work if counts fail; numbered pagination and the page-gap algorithm; paging and its disabled ends; error → Retry recovers with the same filters; rows stay visible and busy while the next page loads; Clear filters on an empty result.
 - `application-rules.spec`: a complete application passes; an incomplete one lists every problem; age in whole years from a local date, including the 18th birthday and impossible dates.
 - `validators.spec`: each format, empty values left to `required`, `https` only, whitespace-only text, the 18th-birthday boundary, impossible dates, and the error messages.
 - `form-field.spec` (OnPush host): label/`id` link, required marker and `aria-required`, no error before touch, error and hint in `aria-describedby`, updates from code under OnPush.
 - `auto-save.spec` (fake timers): one debounced save of the latest value; no request for unchanged values; saves never overlap and a queued save sends the newest value; failure, then retry via `flush()`; `flush()` waits for a running save; `reset()` after load.
-- `application-wizard.component.spec` (real router): Next and Enter stop at invalid steps and focus the first error; jumping ahead only through valid steps; the first auto-save creates the draft once, switches the URL and keeps the wizard mounted; "New application" then starts blank; loading a draft doesn't save it; submitted applications open read-only; masked review values; submit saves pending changes first; submit and save failures with Retry; the server's 422 reasons are shown; saving before leaving, and asking when that fails.
+- `application-wizard.component.spec` (real router): Next and Enter stop at invalid steps and focus the first error; jumping ahead only through valid steps; the first auto-save creates the draft once, switches the URL and keeps the wizard mounted; "New application" then starts blank; loading a draft doesn't save it; submitted applications open read-only; masked review values; submit saves pending changes first; submit and save failures with Retry; the server's 422 reasons are shown; saving before leaving, and asking when that fails; leaving `/new` right after typing creates the draft and still leaves.
 - `sensitive-value.component.spec`: masked even when the API sends the full value; screen-reader text; no Reveal without permission; reveal then hide; auto-hide after 30 s; a refused reveal stays masked.
-- `application-detail.component.spec` (real router): SALES read-only with masked values and no review controls or reviewer call; Continue editing on a draft; REVIEWER gets decisions and Reveal but not assignment; a comment is required and focused; a decision updates status and history in place (no refetch) and focuses the confirmation; one action at a time; a 403 reloads the changed application; ADMIN assignment; no actions once decided; not found vs Retry.
+- `application-detail.component.spec` (real router): SALES read-only with masked values and no review controls or reviewer call; Continue editing on a draft; REVIEWER gets decisions and Reveal but not assignment; ADMIN gets assignment but not the decision; a comment is required and focused; a decision updates status and history in place (no refetch) and focuses the confirmation; one action at a time; a 403 reloads the changed application; ADMIN assignment; no actions once decided; not found vs Retry.
 
 ## Next steps
 
 - A real backend: set `useMockApi: false` and `apiBaseUrl` in the environment file; send the CSP as a header with a nonce, plus `frame-ancestors`.
-- End-to-end tests (Playwright) for the main journeys, including the CSP check above.
+- Session continuity with an `httpOnly` refresh cookie once a real server exists (see [decision record 1](docs/decisions/0001-session-tokens.md)).
+- Version checks on draft saves (409 on conflict) for edits from two tabs, and write-only sensitive fields.
+- Real-time status updates (WebSocket or Socket.IO) once there is a server to push them.
 
 ## AI assistance disclosure
 

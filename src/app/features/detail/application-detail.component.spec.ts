@@ -7,29 +7,25 @@ import { ApplicationApi } from '../../core/api/application.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { seed } from '../../core/mock/mock-db';
 import { MerchantApplication, Role, User } from '../../core/models';
+import { asSeenBy, DEMO_USER } from '../../../testing/fixtures';
 import { ApplicationDetailComponent } from './application-detail.component';
 
-/** Fictional seed data, masked the way the server sends it to reviewers. */
-const ROWS = seed().map((a) => ({
-  ...a,
-  owner: { ...a.owner, taxId: '••••••••' + a.owner.taxId.slice(-4) },
-  banking: { ...a.banking, accountNumber: '••••••••' + a.banking.accountNumber.slice(-4) },
-}));
+/** Fictional seed data. The stubbed API returns it as the current viewer would see it. */
+const ROWS = seed();
 const REVIEWERS: User[] = [
   { id: 'u-rev-1', name: 'Rita Reviewer', role: 'REVIEWER' },
   { id: 'u-rev-2', name: 'Ravi Reviewer', role: 'REVIEWER' },
 ];
-const USER_IDS: Record<Role, string> = {
-  SALES: 'u-sales-2',
-  REVIEWER: 'u-rev-2',
-  ADMIN: 'u-admin',
-};
 
 describe('ApplicationDetailComponent', () => {
   let harness: RouterTestingHarness;
   let api: Record<'get' | 'reviewers' | 'decide' | 'assign' | 'reveal', ReturnType<typeof vi.fn>>;
+  let viewer: User;
+  /** What the server would send the current viewer: masked, with their allowedActions. */
+  const seen = (app: MerchantApplication) => asSeenBy(viewer, app);
 
   async function open(id: string, role: Role): Promise<void> {
+    viewer = DEMO_USER[role];
     TestBed.configureTestingModule({
       providers: [
         provideRouter(
@@ -41,7 +37,7 @@ describe('ApplicationDetailComponent', () => {
           provide: AuthService,
           useValue: {
             hasRole: (...roles: Role[]) => roles.includes(role),
-            user: () => ({ id: USER_IDS[role], name: role, role }),
+            user: () => viewer,
           },
         },
       ],
@@ -66,7 +62,7 @@ describe('ApplicationDetailComponent', () => {
 
   beforeEach(() => {
     api = {
-      get: vi.fn((id: string) => of(structuredClone(ROWS.find((a) => a.id === id)!))),
+      get: vi.fn((id: string) => of(seen(ROWS.find((a) => a.id === id)!))),
       reviewers: vi.fn(() => of(REVIEWERS)),
       decide: vi.fn(),
       assign: vi.fn(),
@@ -86,8 +82,7 @@ describe('ApplicationDetailComponent', () => {
   });
 
   it('offers SALES "Continue editing" on a draft, still masking its own sensitive values', async () => {
-    api.get.mockReturnValueOnce(of(seed().find((a) => a.id === 'app-005')!)); // unmasked, as the API sends it
-    await open('app-005', 'SALES');
+    await open('app-005', 'SALES'); // the API sends the author's own draft unmasked
     const edit = Array.from(el().querySelectorAll('a')).find((a) =>
       a.textContent?.includes('Continue'),
     );
@@ -117,25 +112,27 @@ describe('ApplicationDetailComponent', () => {
 
   it('records a decision and shows the updated application without reloading it', async () => {
     const app = ROWS[0];
-    api.decide.mockReturnValueOnce(
-      of({
-        ...app,
-        status: 'REJECTED',
-        riskHistory: [
-          {
-            at: '2026-11-01T09:00:00Z',
-            by: 'Rita Reviewer',
-            decision: 'NOTE',
-            comment: 'Older note',
-          },
-          {
-            at: '2026-11-02T09:00:00Z',
-            by: 'Ravi Reviewer',
-            decision: 'REJECTED',
-            comment: 'Missing documents',
-          },
-        ],
-      }),
+    api.decide.mockImplementationOnce(() =>
+      of(
+        seen({
+          ...app,
+          status: 'REJECTED',
+          riskHistory: [
+            {
+              at: '2026-11-01T09:00:00Z',
+              by: 'Rita Reviewer',
+              decision: 'NOTE',
+              comment: 'Older note',
+            },
+            {
+              at: '2026-11-02T09:00:00Z',
+              by: 'Ravi Reviewer',
+              decision: 'REJECTED',
+              comment: 'Missing documents',
+            },
+          ],
+        }),
+      ),
     );
     await open('app-001', 'REVIEWER');
     comment().value = '  Missing documents  ';
@@ -175,7 +172,7 @@ describe('ApplicationDetailComponent', () => {
   it('reloads when the server refuses because the application changed', async () => {
     api.decide.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 403 })));
     await open('app-001', 'REVIEWER');
-    api.get.mockReturnValueOnce(of({ ...ROWS[0], status: 'APPROVED' })); // decided by someone else
+    api.get.mockReturnValueOnce(of(seen({ ...ROWS[0], status: 'APPROVED' }))); // decided by someone else
     comment().value = 'Looks good';
     comment().dispatchEvent(new Event('input'));
     button('Approve')!.click();
@@ -189,7 +186,9 @@ describe('ApplicationDetailComponent', () => {
 
   it('lets ADMIN assign a reviewer', async () => {
     const app = ROWS.find((a) => a.id === 'app-006')!; // SUBMITTED, assigned to u-rev-1
-    api.assign.mockReturnValueOnce(of({ ...app, status: 'IN_REVIEW', assignedTo: 'u-rev-2' }));
+    api.assign.mockImplementationOnce(() =>
+      of(seen({ ...app, status: 'IN_REVIEW', assignedTo: 'u-rev-2' })),
+    );
     await open('app-006', 'ADMIN');
     expect(text()).toContain('Reviewer: Rita Reviewer');
     const assign = button('Assign')!;
@@ -211,6 +210,14 @@ describe('ApplicationDetailComponent', () => {
     expect(badge()).toBe('In review');
     expect(text()).toContain('Reviewer: Ravi Reviewer');
     expect(text()).toContain('Assigned to Ravi Reviewer.');
+  });
+
+  it('gives ADMIN assignment but not the decision, which belongs to the assigned reviewer', async () => {
+    await open('app-006', 'ADMIN'); // SUBMITTED
+    expect(text()).toContain('Assignment');
+    expect(text()).not.toContain('Risk decision');
+    expect(button('Approve')).toBeUndefined();
+    expect(text()).toContain('Reveal tax ID'); // ADMIN may still reveal (audited)
   });
 
   it('hides review actions once an application is decided', async () => {

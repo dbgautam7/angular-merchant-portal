@@ -147,7 +147,7 @@ describe('mockApiInterceptor (server rules)', () => {
   });
 
   it('masks sensitive fields and reveals them only to REVIEWER/ADMIN, with an audit log', () => {
-    const audit = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const audit = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     loginAs('u-sales-2');
     expect(call(api.get('app-001')).value?.owner.taxId).toBe('••••••••0001');
     expect(call(api.reveal('app-001', 'taxId')).status).toBe(403);
@@ -226,7 +226,7 @@ describe('mockApiInterceptor (server rules)', () => {
     expect(call(api.submit(draft.id)).value?.status).toBe('SUBMITTED');
   });
 
-  it('allows decisions only to REVIEWER/ADMIN and assignment only to ADMIN', () => {
+  it('allows decisions only to the assigned reviewer and assignment only to ADMIN', () => {
     loginAs('u-sales-2');
     expect(call(api.decide('app-001', 'APPROVED', 'Looks good')).status).toBe(403);
     expect(call(api.reviewers()).status).toBe(403);
@@ -244,6 +244,21 @@ describe('mockApiInterceptor (server rules)', () => {
       status: 'IN_REVIEW',
     });
     expect(call(api.assign('app-006', 'u-sales-1')).status).toBe(400);
+  });
+
+  it('returns each caller their allowed actions, and refuses everything else', () => {
+    loginAs('u-sales-2');
+    expect(call(api.get('app-005')).value?.allowedActions).toEqual(['edit', 'submit']); // her draft
+    expect(call(api.get('app-001')).value?.allowedActions).toEqual([]); // hers, submitted
+
+    loginAs('u-rev-2'); // app-001 is SUBMITTED and assigned to u-rev-2
+    expect(call(api.get('app-001')).value?.allowedActions).toEqual(['decide', 'reveal']);
+
+    loginAs('u-admin');
+    expect(call(api.get('app-001')).value?.allowedActions).toEqual(['assign', 'reveal']);
+    // Deciding belongs to the assigned reviewer: ADMIN assigns, but cannot approve or reject.
+    expect(call(api.decide('app-001', 'APPROVED', 'Looks fine')).status).toBe(403);
+    expect(call(api.get('app-001')).value?.status).toBe('SUBMITTED');
   });
 
   it('validates decisions and assignments on the server, not just in the UI', () => {

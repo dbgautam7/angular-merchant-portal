@@ -55,6 +55,18 @@ export interface MerchantApplication extends ApplicationForm {
   riskHistory: RiskEvent[];
 }
 
+/** Something a user may do with one application. Decided by the server, per user and record. */
+export type ApplicationAction = 'edit' | 'submit' | 'decide' | 'assign' | 'reveal';
+
+/**
+ * An application as the API returns it: sensitive fields masked (except the author's own
+ * draft) and the actions the caller may take on it. The UI shows controls from
+ * `allowedActions`; it never re-derives permissions from roles.
+ */
+export interface ApplicationDto extends MerchantApplication {
+  allowedActions: ApplicationAction[];
+}
+
 export interface Page<T> {
   items: T[];
   total: number;

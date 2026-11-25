@@ -58,6 +58,10 @@ service-account*.json
 .sass-cache/
 /connect.lock
 /coverage
+/test-results
+/playwright-report
+/blob-report
+/playwright/.cache
 /libpeerconnection.log
 testem.log
 /typings

@@ -5,9 +5,18 @@ import {
   HttpResponse,
 } from '@angular/common/http';
 import { delay, dematerialize, materialize, Observable, of, throwError } from 'rxjs';
-import { ApplicationForm, ApplicationStatus, MerchantApplication, Role, User } from '../models';
+import {
+  ApplicationAction,
+  ApplicationDto,
+  ApplicationForm,
+  ApplicationStatus,
+  MerchantApplication,
+  Role,
+  User,
+} from '../models';
 import { submissionProblems } from '../application-rules';
 import { emptyForm, seed, USERS } from './mock-db';
+import { allowedActions, canView } from './policy';
 
 /**
  * In-memory mock backend (last interceptor in the chain). Lets the app run with
@@ -54,21 +63,21 @@ function currentUser(req: HttpRequest<unknown>): User | null {
   return USERS.find((u) => u.id === t.userId) ?? null;
 }
 
-const canView = (u: User, a: MerchantApplication) =>
-  u.role === 'ADMIN' ||
-  (u.role === 'SALES' && a.createdBy === u.id) ||
-  (u.role === 'REVIEWER' && a.assignedTo === u.id);
-
 const mask = (v: string) => (v ? '•'.repeat(Math.max(0, v.length - 4)) + v.slice(-4) : '');
 
-/** Sensitive values never leave the "server" unmasked except via /reveal. */
-const toDto = (a: MerchantApplication, u: User): MerchantApplication => {
-  const own = u.role === 'SALES' && a.createdBy === u.id && a.status === 'DRAFT';
-  if (own) return a; // the author editing their own draft needs real values
+/**
+ * What the API returns for one application: the caller's allowed actions, and sensitive values
+ * masked. They leave the "server" in full only via the audited /reveal, or to the author
+ * editing their own draft, who needs the real values in the form.
+ */
+export const toDto = (a: MerchantApplication, u: User): ApplicationDto => {
+  const actions = allowedActions(u, a);
+  if (actions.includes('edit')) return { ...structuredClone(a), allowedActions: actions };
   return {
-    ...a,
+    ...structuredClone(a),
     owner: { ...a.owner, taxId: mask(a.owner.taxId) },
     banking: { ...a.banking, accountNumber: mask(a.banking.accountNumber) },
+    allowedActions: actions,
   };
 };
 
@@ -178,7 +187,7 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
       ...emptyForm(),
     };
     db.apps.unshift(app);
-    return ok(app);
+    return ok(toDto(app, user));
   }
 
   // ---- single application ----
@@ -188,19 +197,21 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
   const app = db.apps.find((a) => a.id === id);
   if (!app || !canView(user, app)) return fail(404, 'Not found', url); // 404 hides existence
   const touch = () => (app.updatedAt = new Date().toISOString());
+  // Every action on a record is checked against the one policy (policy.ts).
+  const may = (action: ApplicationAction) => allowedActions(user, app).includes(action);
 
   if (!action && method === 'GET') return ok(toDto(app, user));
 
   if (!action && method === 'PUT') {
-    if (!need('SALES') || app.status !== 'DRAFT') return forbid();
+    if (!may('edit')) return forbid(); // 403 once submitted
     const draft = draftAfterSave(app, body);
     if (!draft) return fail(400, 'Invalid draft', url);
     Object.assign(app, draft);
     touch();
-    return ok(app);
+    return ok(toDto(app, user));
   }
   if (action === 'submit' && method === 'POST') {
-    if (!need('SALES') || app.status !== 'DRAFT') return forbid();
+    if (!may('submit')) return forbid();
     // The form already checks all this; the server checks again, as a client can skip the form.
     const problems = submissionProblems(app);
     if (problems.length) return fail(422, 'The application is incomplete', url, { problems });
@@ -208,10 +219,8 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
     touch();
     return ok(toDto(app, user));
   }
-  const open = app.status === 'SUBMITTED' || app.status === 'IN_REVIEW';
-
   if (action === 'decision' && method === 'POST') {
-    if (!need('REVIEWER', 'ADMIN') || !open) return forbid();
+    if (!may('decide')) return forbid(); // the assigned reviewer, while under review
     // Validated here too: a client could send any status, e.g. DRAFT to reopen the application.
     const decision = body['decision'];
     if (decision !== 'APPROVED' && decision !== 'REJECTED') {
@@ -226,7 +235,7 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
   }
   if (action === 'assign' && method === 'PUT') {
     // Only while under review: assigning a draft would show it to a reviewer before submission.
-    if (!need('ADMIN') || !open) return forbid();
+    if (!may('assign')) return forbid();
     const reviewer = USERS.find((u) => u.id === body['reviewerId'] && u.role === 'REVIEWER');
     if (!reviewer) return fail(400, 'Invalid reviewer', url);
     app.assignedTo = reviewer.id;
@@ -235,7 +244,7 @@ export const mockApiInterceptor: HttpInterceptorFn = (req, next) => {
     return ok(toDto(app, user));
   }
   if (action === 'reveal' && method === 'GET') {
-    if (!need('REVIEWER', 'ADMIN')) return forbid();
+    if (!may('reveal')) return forbid();
     const value =
       field === 'taxId'
         ? app.owner.taxId

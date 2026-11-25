@@ -26,7 +26,7 @@ import {
 } from 'rxjs';
 import { ApplicationApi } from '../../core/api/application.api';
 import { AuthService } from '../../core/auth/auth.service';
-import { MerchantApplication, RiskEvent } from '../../core/models';
+import { ApplicationDto, MerchantApplication, RiskEvent } from '../../core/models';
 import { CategoryLabelPipe } from '../../shared/categories';
 import { injectFocus } from '../../shared/focus';
 import { FieldControlDirective, FormFieldComponent } from '../../shared/form-field';
@@ -39,7 +39,7 @@ type Decision = 'APPROVED' | 'REJECTED';
 
 type LoadState =
   | { status: 'loading' }
-  | { status: 'ready'; app: MerchantApplication }
+  | { status: 'ready'; app: ApplicationDto }
   | { status: 'error'; notFound: boolean };
 
 const EVENT_STYLES: Record<RiskEvent['decision'], { label: string; icon: IconName; tone: string }> =
@@ -142,18 +142,18 @@ export class ApplicationDetailComponent {
   });
 
   /**
-   * Who sees which control, in one place so the policy is easy to review. UX only: the API
-   * enforces the same rules (403/404), so hiding a control is never the security boundary.
+   * Which controls to show, straight from the server's `allowedActions` for this user and this
+   * application: the UI never re-derives permissions. Hiding a control is UX only; the API
+   * checks the same policy on every request (403/404).
    */
   protected readonly can = computed(() => {
-    const status = this.app()?.status;
-    const open = status === 'SUBMITTED' || status === 'IN_REVIEW';
+    const actions = this.app()?.allowedActions ?? [];
     return {
-      edit: this.auth.hasRole('SALES') && status === 'DRAFT',
-      decide: this.auth.hasRole('REVIEWER', 'ADMIN') && open,
-      assign: this.auth.hasRole('ADMIN') && open,
-      reveal: this.auth.hasRole('REVIEWER', 'ADMIN'),
-      seeReviewer: this.auth.hasRole('REVIEWER', 'ADMIN'),
+      edit: actions.includes('edit'),
+      decide: actions.includes('decide'),
+      assign: actions.includes('assign'),
+      reveal: actions.includes('reveal'),
+      seeReviewer: this.auth.hasRole('REVIEWER', 'ADMIN'), // display only, not an action
     };
   });
 
@@ -214,7 +214,7 @@ export class ApplicationDetailComponent {
   }
 
   /** Runs one action at a time and shows the server's updated copy of the application. */
-  private run(request: Observable<MerchantApplication>, success: string): void {
+  private run(request: Observable<ApplicationDto>, success: string): void {
     if (this.busy()) return;
     this.busy.set(true);
     this.notice.set(null);

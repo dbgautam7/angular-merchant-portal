@@ -140,7 +140,7 @@ describe('authInterceptor', () => {
 
   it('does not attach a token or try to refresh once signed out', () => {
     auth.logout();
-    http.get('/api/a').subscribe({ error: () => {} });
+    http.get('/api/a').subscribe({ error: () => undefined }); // expected to fail
     const req = ctrl.expectOne('/api/a');
     expect(req.request.headers.has('Authorization')).toBe(false);
     req.flush(null, unauthorized);

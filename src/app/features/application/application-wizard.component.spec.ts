@@ -8,6 +8,7 @@ import { of, throwError } from 'rxjs';
 import { wizardMatcher } from '../../app.routes';
 import { ApplicationApi } from '../../core/api/application.api';
 import { emptyForm, seed } from '../../core/mock/mock-db';
+import { asSeenBy, DEMO_USER } from '../../../testing/fixtures';
 import { ApplicationForm } from '../../core/models';
 import { unsavedChangesGuard } from '../../shared/unsaved-changes.guard';
 import { ApplicationWizardComponent, AUTO_SAVE_DEBOUNCE_MS } from './application-wizard.component';
@@ -30,7 +31,10 @@ const routes: Routes = [
   },
 ];
 
-/** Fictional seed data: app-005 is a complete, valid draft; app-001 is already submitted. */
+/**
+ * Fictional seed data: app-005 is Sita's complete, valid draft; app-001 is hers but submitted.
+ * The stubbed API returns it as Sita would see it, with allowedActions from the real policy.
+ */
 const ROWS = seed();
 const DRAFT = ROWS.find((a) => a.id === 'app-005')!;
 
@@ -105,7 +109,14 @@ describe('ApplicationWizardComponent', () => {
     // shouldAdvanceTime lets Angular's own short timers (render scheduling) still run.
     vi.useFakeTimers({ shouldAdvanceTime: true });
     api = {
-      get: vi.fn((id: string) => of(structuredClone(ROWS.find((a) => a.id === id)!))),
+      get: vi.fn((id: string) =>
+        of(
+          asSeenBy(
+            DEMO_USER.SALES,
+            ROWS.find((a) => a.id === id)!,
+          ),
+        ),
+      ),
       createDraft: vi.fn(() => of({ ...DRAFT, ...emptyForm(), id: 'app-new' })),
       saveDraft: vi.fn((id: string, form: ApplicationForm) => of({ ...DRAFT, ...form, id })),
       submit: vi.fn((id: string) => of({ ...DRAFT, id, status: 'SUBMITTED' })),
@@ -290,6 +301,22 @@ describe('ApplicationWizardComponent', () => {
     await settle();
     expect(api.saveDraft).toHaveBeenCalledTimes(2);
     expect(saveStatus()).toMatch(/^Draft saved at /);
+  });
+
+  it('leaving /new right after typing creates the draft and still leaves', async () => {
+    await open('/applications/new');
+    fill('Legal name', 'Leave Early Ltd');
+    await harness.navigateByUrl('/applications'); // before the auto-save debounce
+
+    expect(api.createDraft).toHaveBeenCalledTimes(1);
+    expect(api.saveDraft).toHaveBeenCalledWith(
+      'app-new',
+      expect.objectContaining({
+        business: expect.objectContaining({ legalName: 'Leave Early Ltd' }),
+      }),
+    );
+    // Not kept on the form by the new draft's URL switch.
+    expect(path()).toBe('/applications');
   });
 
   it('saves pending changes before leaving, and asks when that save fails', async () => {

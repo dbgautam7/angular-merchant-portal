@@ -15,7 +15,7 @@ import { Router, RouterLink } from '@angular/router';
 import { catchError, map, Observable, of, startWith, switchMap, tap, throwError } from 'rxjs';
 import { ApplicationApi } from '../../core/api/application.api';
 import { MIN_NAME_LENGTH, MIN_OWNER_AGE } from '../../core/application-rules';
-import { ApplicationForm, MerchantApplication } from '../../core/models';
+import { ApplicationDto, ApplicationForm } from '../../core/models';
 import { autoSave } from '../../shared/auto-save';
 import { CATEGORY_LABELS, CategoryLabelPipe } from '../../shared/categories';
 import { injectFocus } from '../../shared/focus';
@@ -273,7 +273,7 @@ export class ApplicationWizardComponent implements CanLeave {
   }
 
   /** Creates the server draft on the first save, then saves into it. */
-  private saveDraft(value: ApplicationForm): Observable<MerchantApplication> {
+  private saveDraft(value: ApplicationForm): Observable<ApplicationDto> {
     const id = this.draftId();
     const id$ = id
       ? of(id)
@@ -282,7 +282,11 @@ export class ApplicationWizardComponent implements CanLeave {
           tap((newId) => {
             this.draftId.set(newId);
             // Refresh-safe URL. Same route, so the wizard stays mounted (see wizardMatcher).
-            void this.router.navigate(['/applications', newId, 'edit'], { replaceUrl: true });
+            // Skipped when the user is already leaving (this is the leave guard's save):
+            // starting a navigation now would cancel theirs and keep them on the form.
+            if (!this.router.currentNavigation()) {
+              void this.router.navigate(['/applications', newId, 'edit'], { replaceUrl: true });
+            }
           }),
         );
     return id$.pipe(switchMap((draftId) => this.api.saveDraft(draftId, value)));
@@ -292,8 +296,9 @@ export class ApplicationWizardComponent implements CanLeave {
    * Starts the wizard on a loaded draft, or on a blank form for /new. Anything already submitted
    * opens read-only on the detail page instead.
    */
-  private show(app: MerchantApplication | null): LoadState {
-    if (app && app.status !== 'DRAFT') {
+  private show(app: ApplicationDto | null): LoadState {
+    // Not editable by this user (e.g. already submitted): open it read-only instead.
+    if (app && !app.allowedActions.includes('edit')) {
       void this.router.navigate(['/applications', app.id], { replaceUrl: true });
       return 'loading';
     }

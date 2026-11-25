@@ -16,7 +16,7 @@ import {
 } from 'rxjs';
 import { ApplicationApi } from '../../core/api/application.api';
 import { AuthService } from '../../core/auth/auth.service';
-import { ApplicationQuery, ApplicationStatus, MerchantApplication, Page } from '../../core/models';
+import { ApplicationDto, ApplicationQuery, ApplicationStatus, Page } from '../../core/models';
 import { CategoryLabelPipe } from '../../shared/categories';
 import { IconComponent } from '../../shared/icon.component';
 import { STATUS_LABELS, StatusBadgeComponent } from '../../shared/status-badge.component';
@@ -46,13 +46,13 @@ export function pageList(current: number, total: number): (number | null)[] {
 
 interface ListState {
   /** Rows for the current filters. Kept on screen (dimmed) while the next page loads. */
-  page: Page<MerchantApplication> | null;
+  page: Page<ApplicationDto> | null;
   loading: boolean;
   error: string | null;
 }
 
 type ListEvent =
-  { type: 'request' } | { type: 'success'; page: Page<MerchantApplication> } | { type: 'failure' };
+  { type: 'request' } | { type: 'success'; page: Page<ApplicationDto> } | { type: 'failure' };
 
 const INITIAL_STATE: ListState = { page: null, loading: true, error: null };
 
@@ -176,9 +176,22 @@ export class DashboardComponent {
       .pipe(
         debounceTime(SEARCH_DEBOUNCE_MS),
         filter((text) => text !== this.q()),
+        // If the user clicked through to another page meanwhile, applying the search now
+        // would pull them back to the dashboard.
+        filter(() => !this.leaving()),
         takeUntilDestroyed(),
       )
       .subscribe((text) => this.navigate({ q: text.trim() ? text : null, page: null }, true));
+  }
+
+  /** True while the router is taking the user to a different page. */
+  private leaving(): boolean {
+    const navigation = this.router.currentNavigation();
+    const path = (url: string) => url.split(/[?#]/)[0];
+    return (
+      !!navigation &&
+      path(this.router.serializeUrl(navigation.extractedUrl)) !== path(this.router.url)
+    );
   }
 
   protected onSearch(text: string): void {
@@ -198,9 +211,9 @@ export class DashboardComponent {
     this.retry$.next();
   }
 
-  /** UX only: the API rejects edits from other roles and on non-draft applications anyway. */
-  protected canEdit(app: MerchantApplication): boolean {
-    return this.canCreate() && app.status === 'DRAFT';
+  /** From the server's allowedActions; the API rejects any other edit anyway. */
+  protected canEdit(app: ApplicationDto): boolean {
+    return app.allowedActions.includes('edit');
   }
 
   /** Merges into the current query params; null removes a param, keeping URLs clean. */

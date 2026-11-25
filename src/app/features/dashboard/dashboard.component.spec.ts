@@ -1,3 +1,4 @@
+import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
@@ -7,33 +8,48 @@ import { ApplicationApi } from '../../core/api/application.api';
 import { AuthService } from '../../core/auth/auth.service';
 import { seed } from '../../core/mock/mock-db';
 import {
+  ApplicationDto,
   ApplicationQuery,
   ApplicationSummary,
-  MerchantApplication,
   Page,
   Role,
+  User,
 } from '../../core/models';
+import { asSeenBy, DEMO_USER } from '../../../testing/fixtures';
 import { DashboardComponent, PAGE_SIZE, pageList, SEARCH_DEBOUNCE_MS } from './dashboard.component';
 
-/** 42 fictional applications; on page 1, app-005 and app-010 are drafts. */
+/**
+ * 42 fictional applications. On page 1, app-005 (Sita's) and app-010 (Sam's) are drafts.
+ * Rows come back as the current viewer would see them, with allowedActions from the real policy.
+ */
 const ROWS = seed();
-const pageFor = (q: ApplicationQuery, rows = ROWS): Page<MerchantApplication> => ({
-  items: rows.slice((q.page - 1) * q.size, q.page * q.size),
+let viewer: User;
+const pageFor = (q: ApplicationQuery, rows = ROWS): Page<ApplicationDto> => ({
+  items: rows.slice((q.page - 1) * q.size, q.page * q.size).map((a) => asSeenBy(viewer, a)),
   total: rows.length,
   page: q.page,
   size: q.size,
 });
 
+@Component({ template: 'Detail' })
+class StubPage {}
+let gate: Observable<boolean> = of(true);
+
 describe('DashboardComponent', () => {
-  let list: Mock<(q: ApplicationQuery) => Observable<Page<MerchantApplication>>>;
+  let list: Mock<(q: ApplicationQuery) => Observable<Page<ApplicationDto>>>;
   let summary: Mock<(q: string) => Observable<ApplicationSummary>>;
   let harness: RouterTestingHarness;
 
   async function open(url: string, role: Role = 'SALES'): Promise<void> {
+    viewer = DEMO_USER[role];
     TestBed.configureTestingModule({
       providers: [
         provideRouter(
-          [{ path: 'applications', component: DashboardComponent }],
+          [
+            { path: 'applications', component: DashboardComponent },
+            // A detail page whose guard the test can hold open, to keep a navigation in flight.
+            { path: 'applications/:id', component: StubPage, canActivate: [() => gate] },
+          ],
           withComponentInputBinding(),
         ),
         { provide: ApplicationApi, useValue: { list, summary } },
@@ -91,13 +107,13 @@ describe('DashboardComponent', () => {
     expect(lastQuery()).toEqual({ page: 1, size: PAGE_SIZE, status: '', q: '' });
   });
 
-  it('shows "New application" and draft-only Edit links to SALES', async () => {
-    await open('/applications');
+  it('shows "New application" to SALES, and Edit only where the server allows it', async () => {
+    await open('/applications'); // as Sita
     expect(text()).toContain('New application');
     expect(el().querySelectorAll('tbody tr')).toHaveLength(PAGE_SIZE);
+    // app-010 is also a draft, but Sam's: its allowedActions has no 'edit', so no Edit link.
     expect(links('Edit').map((a) => a.getAttribute('href'))).toEqual([
       '/applications/app-005/edit',
-      '/applications/app-010/edit',
     ]);
   });
 
@@ -130,6 +146,27 @@ describe('DashboardComponent', () => {
     expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ replaceUrl: true }));
     expect(url()).toBe('/applications?q=demo');
     expect(lastQuery()).toEqual({ page: 1, size: PAGE_SIZE, status: '', q: 'demo' });
+  });
+
+  it('drops a pending search once the user has clicked through to another page', async () => {
+    await open('/applications');
+    const release = new Subject<boolean>();
+    gate = release; // the detail navigation waits here
+    vi.useFakeTimers();
+    const box = el().querySelector<HTMLInputElement>('#search')!;
+    box.value = 'demo';
+    box.dispatchEvent(new Event('input'));
+
+    const leaving = TestBed.inject(Router).navigateByUrl('/applications/app-001');
+    await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS); // the search fires mid-navigation
+    release.next(true);
+    release.complete();
+    vi.useRealTimers();
+    await leaving;
+    gate = of(true);
+
+    expect(url()).toBe('/applications/app-001'); // not pulled back to /applications?q=demo
+    expect(list).not.toHaveBeenCalledWith(expect.objectContaining({ q: 'demo' }));
   });
 
   it('filters by status with tab links that reset to page 1 and mark the current tab', async () => {
@@ -205,7 +242,7 @@ describe('DashboardComponent', () => {
 
   it('keeps the current rows on screen, marked busy, while the next page loads', async () => {
     await open('/applications');
-    const nextPage = new Subject<Page<MerchantApplication>>();
+    const nextPage = new Subject<Page<ApplicationDto>>();
     list.mockReturnValueOnce(nextPage);
 
     button('Next').click();
